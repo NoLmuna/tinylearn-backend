@@ -68,6 +68,7 @@ const UserController = {
     userLogin: async (req, res) => {
         try {
             const { email, password } = req.body;
+            console.log(email, password);
 
             if (!email || !password) {
                 return send.sendResponseMessage(res, 400, null, 'Email and password are required');
@@ -95,13 +96,15 @@ const UserController = {
                 return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
             }
 
+            const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
+
             const token = jwt.sign(
                 { 
                     userId: existingUser.id, 
                     email: existingUser.email, 
                     role: existingUser.role 
                 },
-                process.env.JWT_SECRET,
+                jwtSecret,
                 { expiresIn: '24h' }
             );
 

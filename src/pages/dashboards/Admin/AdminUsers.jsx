@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   UserGroupIcon, 
   MagnifyingGlassIcon,
   PlusIcon,
   PencilIcon,
   TrashIcon,
-  EyeIcon,
-  FunnelIcon
+  EyeIcon
 } from '@heroicons/react/24/outline';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
@@ -17,31 +17,31 @@ import apiService from '../../../services/api';
 import toast from 'react-hot-toast';
 
 export default function AdminUsers() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [activeRoleTab, setActiveRoleTab] = useState('all');
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (role = 'all') => {
     try {
       setIsLoading(true);
-      console.log('Fetching users...');
-      const response = await apiService.getUsers();
-      console.log('Users response:', response);
+      setActiveRoleTab(role);
+      const response = role === 'all' ? await apiService.getUsers() : await apiService.getUsers(role);
+
       
       if (response.success) {
         setUsers(response.data || []);
       } else {
-        console.error('API response not successful:', response);
         toast.error(response.message || 'Failed to fetch users');
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
-      console.error('Error details:', error.message, error.status);
+      toast.error(error.message || 'Failed to fetch users');
       if (error.status === 401) {
         toast.error('Authentication required. Please log in again.');
       } else {
@@ -55,7 +55,6 @@ export default function AdminUsers() {
   const filterUsers = useCallback(() => {
     let filtered = users;
 
-    // Filter by search query
     if (searchQuery) {
       filtered = filtered.filter(user => 
         user.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -64,13 +63,8 @@ export default function AdminUsers() {
       );
     }
 
-    // Filter by role
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(user => user.role === roleFilter);
-    }
-
     setFilteredUsers(filtered);
-  }, [users, searchQuery, roleFilter]);
+  }, [users, searchQuery]);
 
   useEffect(() => {
     fetchUsers();
@@ -104,25 +98,25 @@ export default function AdminUsers() {
     });
   };
 
-  const handleViewUser = (userId) => {
-    setSelectedUserId(userId);
+  const handleViewUser = (user) => {
+    const roleSlug = (user.role || 'user').toLowerCase();
+    navigate(`/admin/users/${roleSlug}/${user.id}`);
+  };
+
+  const handleEditUser = (user) => {
+    setSelectedUserId(user.id);
+    setSelectedUser(user);
     setIsEditUserModalOpen(true);
   };
 
-  const handleEditUser = (userId) => {
-    setSelectedUserId(userId);
-    setIsEditUserModalOpen(true);
-  };
-
-  const handleDeleteUser = async (userId) => {
+  const handleDeleteUser = async (userId, role) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
     
     try {
-      await apiService.deleteUser(userId);
+      await apiService.deleteUser(userId, role);
       toast.success('User deleted successfully');
-      fetchUsers();
+      fetchUsers(activeRoleTab);
     } catch (error) {
-      console.error('Error deleting user:', error);
       toast.error('Failed to delete user');
     }
   };
@@ -169,6 +163,25 @@ export default function AdminUsers() {
           </div>
         </div>
 
+        {/* Role Tabs */}
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-3">
+            {['all', 'admin', 'teacher', 'student', 'parent'].map((role) => (
+              <button
+                key={role}
+                onClick={() => fetchUsers(role)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                  activeRoleTab === role
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {role === 'all' ? 'All Users' : role.charAt(0).toUpperCase() + role.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[
@@ -207,24 +220,6 @@ export default function AdminUsers() {
                   />
                 </div>
               </div>
-              
-              {/* Role Filter */}
-              <div className="md:w-48">
-                <div className="relative">
-                  <FunnelIcon className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none"
-                  >
-                    <option value="all">All Roles</option>
-                    <option value="admin">Admins</option>
-                    <option value="teacher">Teachers</option>
-                    <option value="student">Students</option>
-                    <option value="parent">Parents</option>
-                  </select>
-                </div>
-              </div>
             </div>
           </div>
         </Card>
@@ -254,7 +249,7 @@ export default function AdminUsers() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                  <tr key={`${user.role || 'user'}-${user.id}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
@@ -286,21 +281,21 @@ export default function AdminUsers() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => handleViewUser(user.id)}
+                          onClick={() => handleViewUser(user)}
                           className="text-blue-600 hover:text-blue-900"
                           title="View User"
                         >
                           <EyeIcon className="h-4 w-4" />
-                        </button>
+                        </button> 
                         <button
-                          onClick={() => handleEditUser(user.id)}
+                          onClick={() => handleEditUser(user)}
                           className="text-green-600 hover:text-green-900"
                           title="Edit User"
                         >
                           <PencilIcon className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteUser(user.id)}
+                          onClick={() => handleDeleteUser(user.id, user.role)}
                           className="text-red-600 hover:text-red-900"
                         >
                           <TrashIcon className="h-4 w-4" />
@@ -317,12 +312,12 @@ export default function AdminUsers() {
                 <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-sm font-medium text-gray-900">No users found</h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  {searchQuery || roleFilter !== 'all' 
+                  {searchQuery || activeRoleTab !== 'all' 
                     ? 'Try adjusting your search or filters.'
                     : 'Get started by creating your first user.'
                   }
                 </p>
-                {(!searchQuery && roleFilter === 'all') && (
+                {(!searchQuery && activeRoleTab === 'all') && (
                   <div className="mt-6">
                     <Button
                       onClick={() => setIsCreateUserModalOpen(true)}
@@ -343,15 +338,17 @@ export default function AdminUsers() {
       <CreateUserModal
         isOpen={isCreateUserModalOpen}
         onClose={() => setIsCreateUserModalOpen(false)}
-        onUserCreated={fetchUsers}
+        onUserCreated={() => fetchUsers(activeRoleTab)}
       />
 
       {/* Edit User Modal */}
       <EditUserModal
         isOpen={isEditUserModalOpen}
         onClose={() => setIsEditUserModalOpen(false)}
-        onUserUpdated={fetchUsers}
+        onUserUpdated={() => fetchUsers(activeRoleTab)}
         userId={selectedUserId}
+        selectedUser={selectedUser}
+        role={selectedUser?.role || activeRoleTab}
       />
     </div>
   );

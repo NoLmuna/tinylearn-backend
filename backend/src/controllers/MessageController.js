@@ -1,46 +1,99 @@
-const { Message, User } = require('../models');
+const { Message, Admin, Teacher, Parent, Student } = require('../models');
 const send = require('../utils/response');
 const { Op } = require('sequelize');
+
+const ROLE_MODELS = {
+    admin: Admin,
+    teacher: Teacher,
+    parent: Parent,
+    student: Student
+};
+
+const ALLOWED_ROLES = Object.keys(ROLE_MODELS);
+
+const findUserByRole = async (role, id) => {
+    const Model = ROLE_MODELS[role];
+    if (!Model) return null;
+    return Model.findByPk(id, {
+        attributes: ['id', 'firstName', 'lastName', 'email']
+    });
+};
+
+const hydrateMessages = async (messages) => {
+    const cache = {
+        admin: new Map(),
+        teacher: new Map(),
+        parent: new Map(),
+        student: new Map()
+    };
+
+    const getActor = async (role, id) => {
+        if (!role || !id) return null;
+        if (cache[role].has(id)) {
+            return cache[role].get(id);
+        }
+        const entity = await findUserByRole(role, id);
+        cache[role].set(id, entity);
+        return entity;
+    };
+
+    return Promise.all(messages.map(async (message) => ({
+        ...message.toJSON(),
+        sender: await getActor(message.senderType, message.senderId),
+        receiver: await getActor(message.receiverType, message.receiverId)
+    })));
+};
 
 const MessageController = {
     async sendMessage(req, res) {
         try {
-            const { receiverId, content } = req.body;
+            const { receiverId, receiverType, content, relatedStudentId, subject, priority } = req.body;
             const senderId = req.user?.userId || req.user?.id;
+            const senderType = req.user?.role;
 
-            if (!senderId) {
-                return send.sendResponseMessage(res, 401, null, 'User ID not found in token');
+            if (!senderId || !senderType) {
+                return send.sendResponseMessage(res, 401, null, 'User identity missing from token');
             }
 
-            if (!receiverId || !content) {
-                return send.sendResponseMessage(res, 400, null, 'Receiver and content are required');
+            if (!receiverId || !receiverType || !content) {
+                return send.sendResponseMessage(res, 400, null, 'Receiver, receiver type, and content are required');
             }
 
-            // Check if receiver exists
-            const receiver = await User.findByPk(receiverId);
+            if (!ALLOWED_ROLES.includes(receiverType)) {
+                return send.sendResponseMessage(res, 400, null, 'Invalid receiver type');
+            }
+
+            const receiver = await findUserByRole(receiverType, receiverId);
             if (!receiver) {
                 return send.sendResponseMessage(res, 404, null, 'Receiver not found');
             }
 
-            // Create the message
-            const message = await Message.create({
-                senderId,
-                receiverId,
-                content
-            });
-
-            // Emit real-time message if Socket.IO is available
-            if (req.app.get('io')) {
-                req.app.get('io').emit('newMessage', {
-                    id: message.id,
-                    senderId,
-                    receiverId,
-                    content,
-                    timestamp: message.createdAt
-                });
+            let relatedStudent = null;
+            if (relatedStudentId) {
+                relatedStudent = await Student.findByPk(relatedStudentId);
+                if (!relatedStudent) {
+                    return send.sendResponseMessage(res, 404, null, 'Related student not found');
+                }
             }
 
-            return send.sendResponseMessage(res, 201, message, 'Message sent successfully');
+            const message = await Message.create({
+                senderId,
+                senderType,
+                receiverId,
+                receiverType,
+                content,
+                subject,
+                priority,
+                relatedStudentId: relatedStudent ? relatedStudent.id : null
+            });
+
+            const hydrated = await hydrateMessages([message]);
+
+            if (req.app.get('io')) {
+                req.app.get('io').emit('newMessage', hydrated[0]);
+            }
+
+            return send.sendResponseMessage(res, 201, hydrated[0], 'Message sent successfully');
         } catch (error) {
             console.error('Error sending message:', error);
             return send.sendResponseMessage(res, 500, null, 'Failed to send message');
@@ -50,40 +103,39 @@ const MessageController = {
     async getMessages(req, res) {
         try {
             const userId = req.user?.userId || req.user?.id;
+            const userRole = req.user?.role;
             const { otherUserId } = req.params;
+            const { otherRole } = req.query;
 
-            if (!userId) {
-                return send.sendResponseMessage(res, 401, null, 'User ID not found in token');
+            if (!userId || !userRole) {
+                return send.sendResponseMessage(res, 401, null, 'User identity missing from token');
             }
 
-            if (!otherUserId) {
-                return send.sendResponseMessage(res, 400, null, 'Other user ID is required');
+            if (!otherUserId || !otherRole) {
+                return send.sendResponseMessage(res, 400, null, 'Other user ID and role are required');
             }
 
-            // Get all messages between the two users
+            const parsedOtherId = parseInt(otherUserId, 10);
+            if (Number.isNaN(parsedOtherId)) {
+                return send.sendResponseMessage(res, 400, null, 'Invalid other user ID');
+            }
+
+            if (!ALLOWED_ROLES.includes(otherRole)) {
+                return send.sendResponseMessage(res, 400, null, 'Invalid other user role');
+            }
+
             const messages = await Message.findAll({
                 where: {
                     [Op.or]: [
-                        { senderId: userId, receiverId: otherUserId },
-                        { senderId: otherUserId, receiverId: userId }
+                        { senderId: userId, senderType: userRole, receiverId: parsedOtherId, receiverType: otherRole },
+                        { senderId: parsedOtherId, senderType: otherRole, receiverId: userId, receiverType: userRole }
                     ]
                 },
-                include: [
-                    {
-                        model: User,
-                        as: 'sender',
-                        attributes: ['id', 'firstName', 'lastName', 'role']
-                    },
-                    {
-                        model: User,
-                        as: 'receiver',
-                        attributes: ['id', 'firstName', 'lastName', 'role']
-                    }
-                ],
                 order: [['createdAt', 'ASC']]
             });
 
-            return send.sendResponseMessage(res, 200, messages, 'Messages retrieved successfully');
+            const hydrated = await hydrateMessages(messages);
+            return send.sendResponseMessage(res, 200, hydrated, 'Messages retrieved successfully');
         } catch (error) {
             console.error('Error getting messages:', error);
             return send.sendResponseMessage(res, 500, null, 'Failed to retrieve messages');
@@ -92,57 +144,56 @@ const MessageController = {
 
     async getConversations(req, res) {
         try {
-            console.log('🔍 req.user:', req.user);
-            console.log('🔍 req.userData:', req.userData);
-            
             const userId = req.user?.userId || req.user?.id;
-            console.log('🔍 Extracted userId:', userId);
+            const userRole = req.user?.role;
 
-            if (!userId) {
-                return send.sendResponseMessage(res, 401, null, 'User ID not found in token');
+            if (!userId || !userRole) {
+                return send.sendResponseMessage(res, 401, null, 'User identity missing from token');
             }
 
-            // Get all unique conversations for this user
             const conversations = await Message.findAll({
                 where: {
                     [Op.or]: [
-                        { senderId: userId },
-                        { receiverId: userId }
+                        { senderId: userId, senderType: userRole },
+                        { receiverId: userId, receiverType: userRole }
                     ]
                 },
-                include: [
-                    {
-                        model: User,
-                        as: 'sender',
-                        attributes: ['id', 'firstName', 'lastName', 'role']
-                    },
-                    {
-                        model: User,
-                        as: 'receiver',
-                        attributes: ['id', 'firstName', 'lastName', 'role']
-                    }
-                ],
                 order: [['createdAt', 'DESC']]
             });
 
-            // Group by conversation partner
             const conversationMap = new Map();
-            conversations.forEach(message => {
-                const partnerId = message.senderId === userId ? message.receiverId : message.senderId;
-                const partner = message.senderId === userId ? message.receiver : message.sender;
-                
-                if (!conversationMap.has(partnerId)) {
-                    conversationMap.set(partnerId, {
+
+            for (const message of conversations) {
+                const isSender = message.senderId === userId && message.senderType === userRole;
+                const partnerId = isSender ? message.receiverId : message.senderId;
+                const partnerRole = isSender ? message.receiverType : message.senderType;
+                const key = `${partnerRole}:${partnerId}`;
+
+                if (!conversationMap.has(key)) {
+                    const partner = await findUserByRole(partnerRole, partnerId);
+                    conversationMap.set(key, {
                         partnerId,
+                        partnerRole,
                         partner,
                         lastMessage: message,
                         unreadCount: 0
                     });
                 }
-            });
+            }
 
-            const conversationList = Array.from(conversationMap.values());
-            return send.sendResponseMessage(res, 200, conversationList, 'Conversations retrieved successfully');
+            const results = [];
+            for (const convo of conversationMap.values()) {
+                const [hydratedLastMessage] = await hydrateMessages([convo.lastMessage]);
+                results.push({
+                    partnerId: convo.partnerId,
+                    partnerRole: convo.partnerRole,
+                    partner: convo.partner,
+                    lastMessage: hydratedLastMessage,
+                    unreadCount: convo.unreadCount
+                });
+            }
+
+            return send.sendResponseMessage(res, 200, results, 'Conversations retrieved successfully');
         } catch (error) {
             console.error('Error getting conversations:', error);
             return send.sendResponseMessage(res, 500, null, 'Failed to retrieve conversations');

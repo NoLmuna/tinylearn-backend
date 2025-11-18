@@ -13,7 +13,10 @@ import {
   PencilIcon,
   TrashIcon,
   EyeIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  DocumentTextIcon,
+  CalendarDaysIcon,
+  CheckCircleIcon
 } from '@heroicons/react/24/outline';
 
 const ViewLesson = () => {
@@ -271,6 +274,83 @@ const ViewLesson = () => {
             </div>
           </Card>
 
+          {/* Linked Assignments */}
+          {lesson.assignments && lesson.assignments.length > 0 && (
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <DocumentTextIcon className="h-6 w-6 text-purple-600" />
+                Linked Assignments
+              </h2>
+              <div className="space-y-4">
+                {lesson.assignments.map((assignment) => {
+                  const isOverdue = new Date(assignment.dueDate) < new Date();
+                  const assignedCount = assignment.assignedTo && assignment.assignedTo.length > 0
+                    ? assignment.assignedTo.length
+                    : 'All Students';
+                  
+                  return (
+                    <div
+                      key={assignment.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-lg font-semibold text-gray-800">
+                              {assignment.title}
+                            </h3>
+                            <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              assignment.assignmentType === 'homework' ? 'bg-blue-100 text-blue-800' :
+                              assignment.assignmentType === 'quiz' ? 'bg-purple-100 text-purple-800' :
+                              assignment.assignmentType === 'project' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {assignment.assignmentType?.charAt(0).toUpperCase() + assignment.assignmentType?.slice(1) || 'Assignment'}
+                            </div>
+                            {isOverdue && (
+                              <div className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Overdue
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-gray-600 text-sm mb-3">{assignment.description}</p>
+                          <div className="flex items-center gap-4 text-sm text-gray-500">
+                            <div className="flex items-center gap-1">
+                              <CalendarDaysIcon className="h-4 w-4" />
+                              <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <CheckCircleIcon className="h-4 w-4" />
+                              <span>Max Points: {assignment.maxPoints || 100}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <UserGroupIcon className="h-4 w-4" />
+                              <span>Assigned to: {assignedCount}</span>
+                            </div>
+                          </div>
+                          {assignment.instructions && (
+                            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                              <div className="text-xs font-medium text-gray-500 mb-1">Instructions:</div>
+                              <p className="text-sm text-gray-700">{assignment.instructions}</p>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/teacher/assignments/${assignment.id}`)}
+                        >
+                          <EyeIcon className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
           {/* Lesson Metadata */}
           <Card className="p-6">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">Lesson Details</h2>
@@ -290,15 +370,23 @@ const ViewLesson = () => {
               <div>
                 <span className="text-gray-500">Status:</span>
                 <span className="ml-2 font-medium">
-                  {lesson.isActive ? 'Active' : 'Inactive'}
+                  {lesson.isPublished ? 'Published' : 'Draft'}
                 </span>
               </div>
               <div>
-                <span className="text-gray-500">Creator:</span>
+                <span className="text-gray-500">Teacher:</span>
                 <span className="ml-2 font-medium">
-                  {lesson.creator ? `${lesson.creator.firstName} ${lesson.creator.lastName}` : 'Unknown'}
+                  {lesson.teacher ? `${lesson.teacher.firstName} ${lesson.teacher.lastName}` : 'Unknown'}
                 </span>
               </div>
+              {lesson.assignments && (
+                <div>
+                  <span className="text-gray-500">Linked Assignments:</span>
+                  <span className="ml-2 font-medium">
+                    {lesson.assignments.length}
+                  </span>
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -308,3 +396,4 @@ const ViewLesson = () => {
 };
 
 export default ViewLesson;
+

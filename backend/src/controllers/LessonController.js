@@ -1,5 +1,5 @@
 /* eslint-disable no-undef */
-const { Lesson, Progress, User } = require('../models/database');
+const { Lesson, Progress, Teacher, Assignment } = require('../models/database');
 const send = require('../utils/response');
 
 const LessonController = {
@@ -23,8 +23,8 @@ const LessonController = {
                 order: [['createdAt', 'DESC']],
                 include: [
                     {
-                        model: User,
-                        as: 'creator',
+                        model: Teacher,
+                        as: 'teacher',
                         attributes: ['id', 'firstName', 'lastName', 'email']
                     }
                 ]
@@ -53,9 +53,15 @@ const LessonController = {
             const lesson = await Lesson.findByPk(id, {
                 include: [
                     {
-                        model: User,
-                        as: 'creator',
+                        model: Teacher,
+                        as: 'teacher',
                         attributes: ['id', 'firstName', 'lastName', 'email']
+                    },
+                    {
+                        model: Assignment,
+                        as: 'assignments',
+                        attributes: { exclude: ['password'] },
+                        required: false
                     }
                 ]
             });
@@ -87,12 +93,25 @@ const LessonController = {
                 ageGroup,
                 duration,
                 imageUrl,
-                videoUrl
+                videoUrl,
+                isPublished,
+                teacherId: overrideTeacherId
             } = req.body;
 
             // Validate required fields
             if (!title || !category || !ageGroup) {
                 return send.sendResponseMessage(res, 400, null, 'Title, category, and age group are required');
+            }
+
+            let teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : overrideTeacherId;
+
+            if (!teacherId) {
+                return send.sendResponseMessage(res, 400, null, 'Teacher ID is required to create a lesson');
+            }
+
+            const teacher = await Teacher.findByPk(teacherId);
+            if (!teacher) {
+                return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
             const newLesson = await Lesson.create({
@@ -105,7 +124,8 @@ const LessonController = {
                 duration,
                 imageUrl,
                 videoUrl,
-                createdBy: req.user.userId || req.user.id
+                isPublished: isPublished !== undefined ? isPublished : false,
+                teacherId
             });
 
             return send.sendResponseMessage(res, 201, newLesson, 'Lesson created successfully');
@@ -131,7 +151,7 @@ const LessonController = {
             }
 
             // Check if user can update (creator, admin, or teacher)
-            if (lesson.createdBy !== userId && !['admin', 'teacher'].includes(req.user.role)) {
+            if (lesson.teacherId !== userId && req.user.role !== 'admin') {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
@@ -184,7 +204,7 @@ const LessonController = {
             }
 
             // Check if user can delete (creator or admin)
-            if (lesson.createdBy !== userId && req.user.role !== 'admin') {
+            if (lesson.teacherId !== userId && req.user.role !== 'admin') {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
@@ -209,8 +229,8 @@ const LessonController = {
                 order: [['createdAt', 'DESC']],
                 include: [
                     {
-                        model: User,
-                        as: 'creator',
+                        model: Teacher,
+                        as: 'teacher',
                         attributes: ['id', 'firstName', 'lastName']
                     }
                 ]

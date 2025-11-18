@@ -13,7 +13,7 @@ module.exports = (sequelize) => {
             allowNull: false,
             field: 'student_id',
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         },
@@ -22,7 +22,7 @@ module.exports = (sequelize) => {
             allowNull: false,
             field: 'parent_id',
             references: {
-                model: 'users',
+                model: 'parents',
                 key: 'id'
             }
         },

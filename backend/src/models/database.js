@@ -13,46 +13,54 @@ sequelize.authenticate()
 .catch(err => console.log('❌ Database connection error:', err));
 
 // Import model functions
-const UserModel = require('./User');
+const AdminModel = require('./Admin');
+const TeacherModel = require('./Teacher');
+const StudentModel = require('./Student');
+const ParentModel = require('./Parent');
 const LessonModel = require('./Lesson');
 const ProgressModel = require('./Progress');
 const AssignmentModel = require('./Assignment');
 const SubmissionModel = require('./Submission');
 const MessageModel = require('./Message');
 const StudentParentModel = require('./StudentParent');
+const TeacherStudentModel = require('./TeacherStudent');
 const AchievementModel = require('./Achievement');
 
 // Initialize models
-const User = UserModel(sequelize);
+const Admin = AdminModel(sequelize);
+const Teacher = TeacherModel(sequelize);
+const Student = StudentModel(sequelize);
+const Parent = ParentModel(sequelize);
 const Lesson = LessonModel(sequelize);
 const Progress = ProgressModel(sequelize);
 const Assignment = AssignmentModel(sequelize);
 const Submission = SubmissionModel(sequelize);
 const Message = MessageModel(sequelize);
 const StudentParent = StudentParentModel(sequelize);
+const TeacherStudent = TeacherStudentModel(sequelize);
 const Achievement = AchievementModel(sequelize);
 
 // Set up associations
-// User and Lesson associations
-User.hasMany(Lesson, {
-    foreignKey: 'createdBy',
+// Teacher and Lesson associations
+Teacher.hasMany(Lesson, {
+    foreignKey: 'teacherId',
     as: 'lessons'
 });
 
-Lesson.belongsTo(User, {
-    foreignKey: 'createdBy',
-    as: 'creator'
+Lesson.belongsTo(Teacher, {
+    foreignKey: 'teacherId',
+    as: 'teacher'
 });
 
-// User and Progress associations
-User.hasMany(Progress, {
-    foreignKey: 'userId',
+// Student and Progress associations
+Student.hasMany(Progress, {
+    foreignKey: 'studentId',
     as: 'progress'
 });
 
-Progress.belongsTo(User, {
-    foreignKey: 'userId',
-    as: 'user'
+Progress.belongsTo(Student, {
+    foreignKey: 'studentId',
+    as: 'student'
 });
 
 // Lesson and Progress associations
@@ -67,12 +75,12 @@ Progress.belongsTo(Lesson, {
 });
 
 // Assignment associations
-User.hasMany(Assignment, {
+Teacher.hasMany(Assignment, {
     foreignKey: 'teacherId',
     as: 'createdAssignments'
 });
 
-Assignment.belongsTo(User, {
+Assignment.belongsTo(Teacher, {
     foreignKey: 'teacherId',
     as: 'teacher'
 });
@@ -98,87 +106,56 @@ Submission.belongsTo(Assignment, {
     as: 'assignment'
 });
 
-User.hasMany(Submission, {
+Student.hasMany(Submission, {
     foreignKey: 'studentId',
     as: 'submissions'
 });
 
-Submission.belongsTo(User, {
+Submission.belongsTo(Student, {
     foreignKey: 'studentId',
     as: 'student'
 });
 
-User.hasMany(Submission, {
+Teacher.hasMany(Submission, {
     foreignKey: 'gradedBy',
     as: 'gradedSubmissions'
 });
 
-Submission.belongsTo(User, {
+Submission.belongsTo(Teacher, {
     foreignKey: 'gradedBy',
     as: 'grader'
 });
 
-// Message associations
-User.hasMany(Message, {
-    foreignKey: 'senderId',
-    as: 'sentMessages'
-});
-
-Message.belongsTo(User, {
-    foreignKey: 'senderId',
-    as: 'sender'
-});
-
-User.hasMany(Message, {
-    foreignKey: 'receiverId',
-    as: 'receivedMessages'
-});
-
-Message.belongsTo(User, {
-    foreignKey: 'receiverId',
-    as: 'receiver'
-});
-
-User.hasMany(Message, {
-    foreignKey: 'relatedStudentId',
-    as: 'relatedMessages'
-});
-
-Message.belongsTo(User, {
-    foreignKey: 'relatedStudentId',
-    as: 'relatedStudent'
-});
-
 // Student-Parent associations
-User.hasMany(StudentParent, {
+Student.hasMany(StudentParent, {
     foreignKey: 'studentId',
     as: 'parentRelations'
 });
 
-StudentParent.belongsTo(User, {
+StudentParent.belongsTo(Student, {
     foreignKey: 'studentId',
     as: 'student'
 });
 
-User.hasMany(StudentParent, {
+Parent.hasMany(StudentParent, {
     foreignKey: 'parentId',
     as: 'childrenRelations'
 });
 
-StudentParent.belongsTo(User, {
+StudentParent.belongsTo(Parent, {
     foreignKey: 'parentId',
     as: 'parent'
 });
 
 // Achievement associations
-User.hasMany(Achievement, {
-    foreignKey: 'userId',
+Student.hasMany(Achievement, {
+    foreignKey: 'studentId',
     as: 'achievements'
 });
 
-Achievement.belongsTo(User, {
-    foreignKey: 'userId',
-    as: 'user'
+Achievement.belongsTo(Student, {
+    foreignKey: 'studentId',
+    as: 'student'
 });
 
 Lesson.hasMany(Achievement, {
@@ -201,6 +178,41 @@ Achievement.belongsTo(Assignment, {
     as: 'relatedAssignment'
 });
 
+// Teacher-Student associations
+Teacher.belongsToMany(Student, {
+    through: TeacherStudent,
+    foreignKey: 'teacherId',
+    otherKey: 'studentId',
+    as: 'students'
+});
+
+Student.belongsToMany(Teacher, {
+    through: TeacherStudent,
+    foreignKey: 'studentId',
+    otherKey: 'teacherId',
+    as: 'teachers'
+});
+
+Teacher.hasMany(TeacherStudent, {
+    foreignKey: 'teacherId',
+    as: 'studentAssignments'
+});
+
+TeacherStudent.belongsTo(Teacher, {
+    foreignKey: 'teacherId',
+    as: 'teacher'
+});
+
+Student.hasMany(TeacherStudent, {
+    foreignKey: 'studentId',
+    as: 'teacherAssignments'
+});
+
+TeacherStudent.belongsTo(Student, {
+    foreignKey: 'studentId',
+    as: 'student'
+});
+
 sequelize.sync({ force: false })
 .then(() => console.log('✅ Database synced successfully!'))
 .catch((error) => console.error('❌ Error during database sync:', error));
@@ -208,14 +220,18 @@ sequelize.sync({ force: false })
 // Export models and sequelize instance
 const db = {
     sequelize,
-    User,
+    Admin,
+    Teacher,
+    Student,
+    Parent,
     Lesson,
     Progress,
     Assignment,
     Submission,
     Message,
     StudentParent,
-    Achievement
+    Achievement,
+    TeacherStudent
 };
 
 module.exports = db;

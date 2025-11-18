@@ -8,23 +8,25 @@ module.exports = (sequelize) => {
             primaryKey: true,
             autoIncrement: true,
         },
+        senderType: {
+            type: DataTypes.ENUM('admin', 'teacher', 'parent', 'student'),
+            allowNull: false,
+            field: 'sender_type'
+        },
         senderId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            field: 'sender_id',
-            references: {
-                model: 'users',
-                key: 'id'
-            }
+            field: 'sender_id'
+        },
+        receiverType: {
+            type: DataTypes.ENUM('admin', 'teacher', 'parent', 'student'),
+            allowNull: false,
+            field: 'receiver_type'
         },
         receiverId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            field: 'receiver_id',
-            references: {
-                model: 'users',
-                key: 'id'
-            }
+            field: 'receiver_id'
         },
         subject: {
             type: DataTypes.STRING,
@@ -72,7 +74,7 @@ module.exports = (sequelize) => {
             allowNull: true,
             field: 'related_student_id',
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         }

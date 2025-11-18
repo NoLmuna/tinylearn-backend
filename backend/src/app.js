@@ -7,12 +7,16 @@ const cors = require('cors');
 require('./models/database');
 
 // Routes
-const UserRoutes = require('./routes/UserRoutes');
+const AdminRoutes = require('./routes/AdminRoutes');
+const TeacherRoutes = require('./routes/TeacherRoutes');
+const StudentRoutes = require('./routes/StudentRoutes');
+const ParentRoutes = require('./routes/ParentRoutes');
 const LessonRoutes = require('./routes/LessonRoutes');
 const ProgressRoutes = require('./routes/ProgressRoutes');
 const AssignmentRoutes = require('./routes/AssignmentRoutes');
 const SubmissionRoutes = require('./routes/SubmissionRoutes');
 const MessageRoutes = require('./routes/MessageRoutes');
+const UserRoutes = require('./routes/UserRoutes');
 
 const app = express();
 
@@ -25,7 +29,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors({
   origin: [
     'http://localhost:5173', 
-    'http://localhost:5174', 
+    'http://localhost:5174',
+    'http://localhost:5175',
     'http://localhost:3000'
   ],
   credentials: true,
@@ -34,12 +39,16 @@ app.use(cors({
 }));
 
 // Mount routes
-app.use('/api/users', UserRoutes);
+app.use('/api/admins', AdminRoutes);
+app.use('/api/teachers', TeacherRoutes);
+app.use('/api/students', StudentRoutes);
+app.use('/api/parents', ParentRoutes);
 app.use('/api/lessons', LessonRoutes);
 app.use('/api/progress', ProgressRoutes);
 app.use('/api/assignments', AssignmentRoutes);
 app.use('/api/submissions', SubmissionRoutes);
 app.use('/api/messages', MessageRoutes);
+app.use('/api/users', UserRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

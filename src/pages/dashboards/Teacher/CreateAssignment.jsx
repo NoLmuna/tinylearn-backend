@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../../../services/api';
+import teacherService from '../../../services/teacher';
 import DashboardNavbar from '../../../components/ui/DashboardNavbar';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
@@ -23,7 +24,8 @@ const CreateAssignment = () => {
     description: '',
     instructions: '',
     lessonId: '',
-    assignedTo: [], // Array of student IDs
+    assignedTo: [], // Array of student IDs, empty means all students
+    assignToAll: false, // Toggle for assigning to all students
     dueDate: '',
     maxPoints: 100,
     assignmentType: 'homework',
@@ -46,19 +48,22 @@ const CreateAssignment = () => {
 
   const fetchLessonsAndStudents = async () => {
     try {
-      const [lessonsRes, usersRes] = await Promise.all([
-        api.getLessons(),
-        api.getUsers()
+      const [lessonsRes, studentsRes] = await Promise.all([
+        teacherService.getLessons({ limit: 100 }),
+        teacherService.getAssignedStudents()
       ]);
 
       if (lessonsRes.success) {
-        setLessons(lessonsRes.data.lessons || []);
+        const lessonsData = lessonsRes.data;
+        const lessonsList = Array.isArray(lessonsData.lessons) 
+          ? lessonsData.lessons 
+          : (Array.isArray(lessonsData) ? lessonsData : []);
+        setLessons(lessonsList);
       }
 
-      if (usersRes.success) {
-        const allUsers = usersRes.data.users || [];
-        const studentUsers = allUsers.filter(user => user.role === 'student');
-        setStudents(studentUsers);
+      if (studentsRes.success) {
+        const assignedStudents = studentsRes.data || [];
+        setStudents(assignedStudents);
       }
     } catch (error) {
       console.error('Failed to fetch lessons and students:', error);
@@ -73,18 +78,36 @@ const CreateAssignment = () => {
     }));
   };
 
-  const handleStudentToggle = (studentId) => {
+  const handleAssignToAllToggle = (checked) => {
     setFormData(prev => ({
       ...prev,
-      assignedTo: prev.assignedTo.includes(studentId)
-        ? prev.assignedTo.filter(id => id !== studentId)
-        : [...prev.assignedTo, studentId]
+      assignToAll: checked,
+      assignedTo: checked ? [] : prev.assignedTo // Clear specific students if assigning to all
     }));
+  };
+
+  const handleStudentToggle = (studentId) => {
+    if (formData.assignToAll) {
+      // If "assign to all" is checked, uncheck it first
+      setFormData(prev => ({
+        ...prev,
+        assignToAll: false,
+        assignedTo: [studentId]
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        assignedTo: prev.assignedTo.includes(studentId)
+          ? prev.assignedTo.filter(id => id !== studentId)
+          : [...prev.assignedTo, studentId]
+      }));
+    }
   };
 
   const selectAllStudents = () => {
     setFormData(prev => ({
       ...prev,
+      assignToAll: false,
       assignedTo: students.map(student => student.id)
     }));
   };
@@ -92,6 +115,7 @@ const CreateAssignment = () => {
   const clearAllStudents = () => {
     setFormData(prev => ({
       ...prev,
+      assignToAll: false,
       assignedTo: []
     }));
   };
@@ -104,8 +128,8 @@ const CreateAssignment = () => {
       return;
     }
 
-    if (formData.assignedTo.length === 0) {
-      toast.error('Please assign the assignment to at least one student');
+    if (!formData.assignToAll && formData.assignedTo.length === 0) {
+      toast.error('Please assign the assignment to at least one student or select "Assign to All Students"');
       return;
     }
 
@@ -119,7 +143,11 @@ const CreateAssignment = () => {
       
       const assignmentData = {
         ...formData,
-        maxPoints: parseInt(formData.maxPoints)
+        maxPoints: parseInt(formData.maxPoints),
+        // If assignToAll is true, send empty array (backend will interpret as "all students")
+        assignedTo: formData.assignToAll ? [] : formData.assignedTo,
+        // Remove assignToAll from the payload as backend doesn't need it
+        assignToAll: undefined
       };
 
       const response = await api.createAssignment(assignmentData);
@@ -287,28 +315,54 @@ const CreateAssignment = () => {
                 Assign to Students *
               </h2>
               <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={selectAllStudents}
-                >
-                  Select All
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={clearAllStudents}
-                >
-                  Clear All
-                </Button>
+                {!formData.assignToAll && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={selectAllStudents}
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearAllStudents}
+                    >
+                      Clear All
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
-            
-            <div className="text-sm text-gray-600 mb-4">
-              Selected: {formData.assignedTo.length} of {students.length} students
+
+            {/* Assign to All Students Option */}
+            <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.assignToAll}
+                  onChange={(e) => handleAssignToAllToggle(e.target.checked)}
+                  className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500"
+                />
+                <div>
+                  <div className="font-medium text-gray-800">
+                    Assign to All Students
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    This assignment will be available to all {students.length} of your assigned students
+                  </div>
+                </div>
+              </label>
             </div>
+            
+            {!formData.assignToAll && (
+              <>
+                <div className="text-sm text-gray-600 mb-4">
+                  Selected: {formData.assignedTo.length} of {students.length} students
+                </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
               {students.map(student => (
@@ -343,6 +397,8 @@ const CreateAssignment = () => {
                 <UserGroupIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500">No students available</p>
               </div>
+            )}
+              </>
             )}
           </Card>
 

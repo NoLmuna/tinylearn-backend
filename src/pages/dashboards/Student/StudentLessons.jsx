@@ -126,7 +126,7 @@ const StudentLessons = () => {
     try {
       toast.success('Starting lesson...', { icon: '🚀' });
       // Navigate to lesson view page
-      navigate(`/student/lesson/${lessonId}`);
+      navigate(`/student/lessons/${lessonId}`);
     } catch (error) {
       console.error('Failed to start lesson:', error);
       toast.error('Failed to start lesson');

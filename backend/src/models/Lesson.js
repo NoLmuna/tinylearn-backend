@@ -63,12 +63,12 @@ module.exports = (sequelize) => {
             defaultValue: true,
             field: 'is_active'
         },
-        createdBy: {
+        teacherId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            field: 'created_by',
+            field: 'teacher_id',
             references: {
-                model: 'users',
+                model: 'teachers',
                 key: 'id'
             }
         }

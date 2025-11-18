@@ -8,12 +8,12 @@ module.exports = (sequelize) => {
             primaryKey: true,
             autoIncrement: true,
         },
-        userId: {
+        studentId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            field: 'user_id',
+            field: 'student_id',
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         },
@@ -59,10 +59,10 @@ module.exports = (sequelize) => {
         indexes: [
             {
                 unique: true,
-                fields: ['user_id', 'lesson_id']
+                fields: ['student_id', 'lesson_id']
             },
             {
-                fields: ['user_id']
+                fields: ['student_id']
             },
             {
                 fields: ['lesson_id']

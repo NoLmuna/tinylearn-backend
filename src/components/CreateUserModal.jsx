@@ -1,22 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import apiService from '../services/api';
 import toast from 'react-hot-toast';
 
+const defaultFormState = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  role: 'student',
+  age: '',
+  grade: '',
+  parentEmail: '',
+  accountStatus: 'active',
+  isActive: true
+};
+
 const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    password: '',
-    role: 'student',
-    age: '',
-    grade: '',
-    parentEmail: ''
-  });
+  const [form, setForm] = useState(defaultFormState);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [studentOptions, setStudentOptions] = useState([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [isStudentsLoading, setIsStudentsLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -25,6 +33,12 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+
+    if (name === 'role' && value !== 'teacher') {
+      setSelectedStudentIds([]);
+      setStudentOptions([]);
+      setStudentSearch('');
     }
   };
 
@@ -48,6 +62,45 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     return Object.keys(newErrors).length === 0;
   };
 
+  useEffect(() => {
+    if (!isOpen || form.role !== 'teacher') return;
+
+    const fetchStudents = async () => {
+      setIsStudentsLoading(true);
+      try {
+        const response = await apiService.getUsers('student');
+        if (response.success) {
+          setStudentOptions(response.data || []);
+        } else {
+          toast.error(response.message || 'Failed to load students');
+        }
+      } catch (error) {
+        toast.error(error.message || 'Failed to load students');
+      } finally {
+        setIsStudentsLoading(false);
+      }
+    };
+
+    fetchStudents();
+  }, [isOpen, form.role]);
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch) return studentOptions;
+    return studentOptions.filter((student) => {
+      const fullName = `${student.firstName || ''} ${student.lastName || ''}`.toLowerCase();
+      return (
+        fullName.includes(studentSearch.toLowerCase()) ||
+        student.email?.toLowerCase().includes(studentSearch.toLowerCase())
+      );
+    });
+  }, [studentOptions, studentSearch]);
+
+  const handleToggleStudent = (studentId) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -55,27 +108,36 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
 
     setIsLoading(true);
     try {
+      const payload = {
+        ...form,
+        accountStatus: 'active',
+        isActive: true
+      };
+
+      let response;
       if (form.role === 'student') {
-        await apiService.createStudent(form);
+        response = await apiService.createStudent(payload);
       } else {
-        await apiService.createUser(form);
+        response = await apiService.createUser(payload);
+      }
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Failed to create user account');
+      }
+
+      if (form.role === 'teacher' && selectedStudentIds.length > 0) {
+        const created = response.data;
+        const teacherId = created?.id || created?.user?.id || created?.teacher?.id;
+        if (teacherId) {
+          await apiService.assignStudentsToTeacher(teacherId, selectedStudentIds);
+        } else {
+          console.warn('Unable to determine new teacher ID for assignment');
+        }
       }
       
       toast.success(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} account created successfully`);
       onUserCreated();
-      onClose();
-      
-      // Reset form
-      setForm({
-        firstName: '',
-        lastName: '',
-        email: '',
-        password: '',
-        role: 'student',
-        age: '',
-        grade: '',
-        parentEmail: ''
-      });
+      handleClose();
     } catch (error) {
       toast.error(error.message || 'Failed to create user account');
     } finally {
@@ -83,24 +145,35 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
     }
   };
 
+  const resetFormState = () => {
+    setForm(defaultFormState);
+    setErrors({});
+    setSelectedStudentIds([]);
+    setStudentOptions([]);
+    setStudentSearch('');
+  };
+
+  const handleClose = () => {
+    resetFormState();
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Create New User Account</h2>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <XMarkIcon className="h-6 w-6" />
-            </button>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 backdrop-blur-sm px-4 py-8 overflow-y-auto">
+      <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <h2 className="text-2xl font-bold text-gray-900">Create New User Account</h2>
+          <button
+            onClick={handleClose}
+            className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
+        </div>
 
-          {/* Form */}
+        <div className="px-6 py-5">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="grid grid-cols-2 gap-4">
@@ -277,12 +350,67 @@ const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
               </div>
             )}
 
+            {/* Teacher student assignment */}
+            {form.role === 'teacher' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Assign Students
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Select the students who should be assigned to this teacher. {selectedStudentIds.length} selected.
+                </p>
+                <input
+                  type="text"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="Search students..."
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-gray-50">
+                  {isStudentsLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-blue-500" />
+                    </div>
+                  ) : filteredStudents.length > 0 ? (
+                    filteredStudents.map((student) => (
+                      <label
+                        key={student.id}
+                        className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2 text-sm last:border-b-0 hover:bg-white"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.includes(student.id)}
+                          onChange={() => handleToggleStudent(student.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-800">
+                            {student.firstName} {student.lastName}
+                          </span>
+                          <span className="text-xs text-gray-500">{student.email}</span>
+                        </div>
+                        {student.grade && (
+                          <span className="ml-auto text-xs text-gray-500">
+                            Grade {student.grade}
+                          </span>
+                        )}
+                      </label>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-gray-500">
+                      No students available
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="flex justify-end gap-4 pt-4">
               <Button
                 type="button"
                 variant="outline"
-                onClick={onClose}
+                onClick={handleClose}
                 disabled={isLoading}
               >
                 Cancel

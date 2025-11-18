@@ -1,6 +1,18 @@
 /* eslint-disable no-undef */
 require('dotenv').config();
-const { User, Lesson, Assignment, StudentParent } = require('./src/models/database');
+const { 
+    Admin, 
+    Teacher, 
+    Parent, 
+    Student, 
+    Lesson, 
+    Assignment, 
+    Progress,
+    Submission,
+    Achievement,
+    Message,
+    StudentParent 
+} = require('./src/models/database');
 const argon2 = require('argon2');
 
 /**
@@ -8,224 +20,346 @@ const argon2 = require('argon2');
  */
 const seedData = async () => {
     try {
-        console.log('🌱 Starting to seed database...');
+        console.log('🌱 Starting to seed database...\n');
 
-        // Create admin user
-        console.log('👤 Creating admin user...');
-        const adminPassword = await argon2.hash('Admin123!');
-        const [admin] = await User.findOrCreate({
-            where: { email: 'admin@tinylearn.com' },
-            defaults: {
-                firstName: 'Admin',
-                lastName: 'User',
+        const createUser = async (Model, data) => {
+            const password = await argon2.hash(data.password);
+            const [record] = await Model.findOrCreate({
+                where: { email: data.email },
+                defaults: { ...data, password }
+            });
+            return record;
+        };
+
+        // Admins
+        console.log('👩‍💼 Seeding admins...');
+        const admins = await Promise.all([
+            createUser(Admin, {
+                firstName: 'Alice',
+                lastName: 'Anderson',
                 email: 'admin@tinylearn.com',
-                password: adminPassword,
-                role: 'admin',
-                accountStatus: 'approved',
-                createdBy: null
-            }
-        });
+                password: 'Admin123!',
+                accountStatus: 'active',
+                isSuperAdmin: true
+            }),
+            createUser(Admin, {
+                firstName: 'Brian',
+                lastName: 'Baker',
+                email: 'ops@tinylearn.com',
+                password: 'AdminOps123!',
+                accountStatus: 'active',
+                isSuperAdmin: false
+            })
+        ]);
 
-        // Create teacher user
-        console.log('👩‍🏫 Creating teacher user...');
-        const teacherPassword = await argon2.hash('Teacher123!');
-        const [teacher] = await User.findOrCreate({
-            where: { email: 'teacher@tinylearn.com' },
-            defaults: {
+        // Teachers
+        console.log('👩‍🏫 Seeding teachers...');
+        const teachers = await Promise.all([
+            createUser(Teacher, {
                 firstName: 'Sarah',
                 lastName: 'Johnson',
-                email: 'teacher@tinylearn.com',
-                password: teacherPassword,
-                role: 'teacher',
+                email: 'teacher1@tinylearn.com',
+                password: 'Teacher123!',
                 accountStatus: 'approved',
-                createdBy: admin.id
-            }
-        });
+                bio: 'Early childhood educator with 8 years of experience.',
+                subjectSpecialty: 'Mathematics'
+            }),
+            createUser(Teacher, {
+                firstName: 'Daniel',
+                lastName: 'Lopez',
+                email: 'teacher2@tinylearn.com',
+                password: 'Teacher456!',
+                accountStatus: 'approved',
+                bio: 'Creative arts and music specialist.',
+                subjectSpecialty: 'Arts'
+            })
+        ]);
 
-        // Create parent user
-        console.log('👨‍👩‍👧 Creating parent user...');
-        const parentPassword = await argon2.hash('Parent123!');
-        const [parent] = await User.findOrCreate({
-            where: { email: 'parent@tinylearn.com' },
-            defaults: {
+        // Parents
+        console.log('👪 Seeding parents...');
+        const parents = await Promise.all([
+            createUser(Parent, {
                 firstName: 'Michael',
                 lastName: 'Smith',
-                email: 'parent@tinylearn.com',
-                password: parentPassword,
-                role: 'parent',
-                accountStatus: 'approved',
-                createdBy: admin.id
-            }
-        });
+                email: 'parent1@tinylearn.com',
+                password: 'Parent123!',
+                relationship: 'father',
+                phoneNumber: '555-1001',
+                accountStatus: 'active'
+            }),
+            createUser(Parent, {
+                firstName: 'Laura',
+                lastName: 'Kim',
+                email: 'parent2@tinylearn.com',
+                password: 'Parent456!',
+                relationship: 'mother',
+                phoneNumber: '555-1002',
+                accountStatus: 'active'
+            })
+        ]);
 
-        // Create student user
-        console.log('👶 Creating student user...');
-        const studentPassword = await argon2.hash('Student123!');
-        const [student] = await User.findOrCreate({
-            where: { email: 'student@tinylearn.com' },
-            defaults: {
+        // Students
+        console.log('👧 Seeding students...');
+        const students = await Promise.all([
+            createUser(Student, {
                 firstName: 'Emma',
                 lastName: 'Smith',
-                email: 'student@tinylearn.com',
-                password: studentPassword,
-                role: 'student',
+                email: 'student1@tinylearn.com',
+                password: 'Student123!',
                 age: 6,
                 grade: '1st Grade',
-                parentEmail: 'parent@tinylearn.com',
-                accountStatus: 'approved',
-                createdBy: admin.id
-            }
-        });
+                accountStatus: 'active'
+            }),
+            createUser(Student, {
+                firstName: 'Noah',
+                lastName: 'Smith',
+                email: 'student2@tinylearn.com',
+                password: 'Student456!',
+                age: 8,
+                grade: '3rd Grade',
+                accountStatus: 'active'
+            }),
+            createUser(Student, {
+                firstName: 'Olivia',
+                lastName: 'Kim',
+                email: 'student3@tinylearn.com',
+                password: 'Student789!',
+                age: 7,
+                grade: '2nd Grade',
+                accountStatus: 'active'
+            })
+        ]);
 
-        // Create parent-student relationship
-        console.log('👪 Creating parent-student relationship...');
-        await StudentParent.findOrCreate({
-            where: { 
-                studentId: student.id,
-                parentId: parent.id 
-            },
-            defaults: {
-                studentId: student.id,
-                parentId: parent.id,
-                relationship: 'parent',
-                isActive: true
-            }
-        });
+        // Parent-student relationships
+        console.log('🔗 Linking parents and students...');
+        const relations = [
+            { student: students[0], parent: parents[0], relationship: 'father' },
+            { student: students[1], parent: parents[0], relationship: 'father' },
+            { student: students[2], parent: parents[1], relationship: 'mother' }
+        ];
 
-        // Create sample lessons
-        console.log('📚 Creating sample lessons...');
-        const sampleLessons = [
+        await Promise.all(relations.map(relation =>
+            StudentParent.findOrCreate({
+                where: {
+                    studentId: relation.student.id,
+                    parentId: relation.parent.id
+                },
+                defaults: {
+                    studentId: relation.student.id,
+                    parentId: relation.parent.id,
+                    relationship: relation.relationship,
+                    isPrimary: true,
+                    canReceiveMessages: true,
+                    canViewProgress: true
+                }
+            })
+        ));
+
+        // Lessons
+        console.log('📚 Creating lessons...');
+        const lessonTemplates = [
             {
-                title: 'Learning Numbers 1-10',
-                description: 'Introduction to counting and recognizing numbers from 1 to 10',
-                content: 'In this lesson, children will learn to count from 1 to 10, recognize number symbols, and understand quantity.',
-                category: 'math',
-                difficulty: 'beginner',
-                ageGroup: '3-5 years',
-                duration: 15,
-                createdBy: teacher.id,
-                isActive: true
+                teacher: teachers[0],
+                lessons: [
+                    {
+                        title: 'Learning Numbers 1-10',
+                        category: 'math',
+                        difficulty: 'beginner',
+                        ageGroup: '4-6 years',
+                        duration: 20
+                    },
+                    {
+                        title: 'Simple Addition',
+                        category: 'math',
+                        difficulty: 'intermediate',
+                        ageGroup: '6-8 years',
+                        duration: 30
+                    }
+                ]
             },
             {
-                title: 'Letter Recognition: A-Z',
-                description: 'Learning to recognize and pronounce all letters of the alphabet',
-                content: 'This lesson helps children identify uppercase and lowercase letters and associate them with sounds.',
-                category: 'reading',
-                difficulty: 'beginner',
-                ageGroup: '4-6 years',
-                duration: 20,
-                createdBy: teacher.id,
-                isActive: true
-            },
-            {
-                title: 'Basic Shapes and Colors',
-                description: 'Identifying common shapes and primary colors',
-                content: 'Learn about circles, squares, triangles, and rectangles, along with red, blue, yellow, and green.',
-                category: 'art',
-                difficulty: 'beginner',
-                ageGroup: '2-4 years',
-                duration: 10,
-                createdBy: teacher.id,
-                isActive: true
-            },
-            {
-                title: 'Simple Addition',
-                description: 'Introduction to adding numbers 1-5',
-                content: 'Using visual aids and manipulatives to understand the concept of addition.',
-                category: 'math',
-                difficulty: 'intermediate',
-                ageGroup: '5-7 years',
-                duration: 25,
-                createdBy: teacher.id,
-                isActive: true
-            },
-            {
-                title: 'Animal Sounds and Names',
-                description: 'Learning about different animals and the sounds they make',
-                content: 'Explore farm animals, pets, and wild animals while learning their names and sounds.',
-                category: 'science',
-                difficulty: 'beginner',
-                ageGroup: '2-5 years',
-                duration: 15,
-                createdBy: teacher.id,
-                isActive: true
+                teacher: teachers[1],
+                lessons: [
+                    {
+                        title: 'Primary Colors Exploration',
+                        category: 'art',
+                        difficulty: 'beginner',
+                        ageGroup: '3-5 years',
+                        duration: 15
+                    },
+                    {
+                        title: 'Animal Sounds and Names',
+                        category: 'science',
+                        difficulty: 'beginner',
+                        ageGroup: '4-6 years',
+                        duration: 25
+                    }
+                ]
             }
         ];
 
-        for (const lessonData of sampleLessons) {
-            await Lesson.findOrCreate({
-                where: { title: lessonData.title },
-                defaults: lessonData
-            });
+        const lessons = [];
+        for (const template of lessonTemplates) {
+            for (const detail of template.lessons) {
+                const [lesson] = await Lesson.findOrCreate({
+                    where: { title: detail.title },
+                    defaults: {
+                        ...detail,
+                        description: `Lesson on ${detail.title.toLowerCase()}.`,
+                        content: `Full lesson plan for ${detail.title}.`,
+                        teacherId: template.teacher.id,
+                        isActive: true
+                    }
+                });
+                lessons.push(lesson);
+            }
         }
 
-        // Create sample assignments
-        console.log('📝 Creating sample assignments...');
-        const lessons = await Lesson.findAll();
-        const sampleAssignments = [
+        // Assignments
+        console.log('📝 Creating assignments...');
+        const assignments = [];
+        for (const lesson of lessons) {
+            const teacher = teachers.find(t => t.id === lesson.teacherId);
+            const studentIds = students
+                .filter((_, index) => index % teachers.length === teachers.indexOf(teacher))
+                .map(s => s.id) || students.map(s => s.id);
+
+            const [assignment] = await Assignment.findOrCreate({
+                where: { title: `${lesson.title} Assignment` },
+                defaults: {
+                    title: `${lesson.title} Assignment`,
+                    description: `Complete the follow-up activity for ${lesson.title}.`,
+                    instructions: 'Follow the instructions carefully and submit before the due date.',
+                    teacherId: teacher.id,
+                    lessonId: lesson.id,
+                    assignedTo: studentIds,
+                    dueDate: new Date(Date.now() + (3 + assignments.length) * 24 * 60 * 60 * 1000),
+                    maxPoints: 100,
+                    assignmentType: 'worksheet',
+                    isActive: true
+                }
+            });
+            assignments.push(assignment);
+        }
+
+        // Progress entries
+        console.log('📈 Creating progress entries...');
+        await Promise.all(students.flatMap(student =>
+            lessons.map((lesson, idx) =>
+                Progress.findOrCreate({
+                    where: {
+                        studentId: student.id,
+                        lessonId: lesson.id
+                    },
+                    defaults: {
+                        studentId: student.id,
+                        lessonId: lesson.id,
+                        status: idx % 3 === 0 ? 'completed' : (idx % 3 === 1 ? 'in_progress' : 'not_started'),
+                        score: idx % 3 === 0 ? 90 : null,
+                        timeSpent: (idx + 1) * 5,
+                        completedAt: idx % 3 === 0 ? new Date() : null
+                    }
+                })
+            )
+        ));
+
+        // Submissions
+        console.log('📤 Creating submissions...');
+        await Promise.all(assignments.flatMap(assignment =>
+            students.map((student, idx) =>
+                Submission.findOrCreate({
+                    where: {
+                        assignmentId: assignment.id,
+                        studentId: student.id
+                    },
+                    defaults: {
+                        assignmentId: assignment.id,
+                        studentId: student.id,
+                        content: `Submission content for ${assignment.title} by ${student.firstName}.`,
+                        attachments: [],
+                        status: idx % 2 === 0 ? 'graded' : 'submitted',
+                        score: idx % 2 === 0 ? 85 + idx : null,
+                        feedback: idx % 2 === 0 ? 'Great job!' : null,
+                        submittedAt: new Date(),
+                        gradedAt: idx % 2 === 0 ? new Date() : null,
+                        gradedBy: assignment.teacherId
+                    }
+                })
+            )
+        ));
+
+        // Achievements
+        console.log('🏅 Creating achievements...');
+        await Promise.all(students.map((student, idx) =>
+            Achievement.findOrCreate({
+                where: {
+                    studentId: student.id,
+                    title: `Milestone ${idx + 1}`
+                },
+                defaults: {
+                    studentId: student.id,
+                    title: `Milestone ${idx + 1}`,
+                    description: `Awarded for completing ${idx + 1} lessons.`,
+                    badgeIcon: '🌟',
+                    badgeColor: '#fbbf24',
+                    achievementType: 'completion',
+                    category: 'general',
+                    points: 50,
+                    relatedLessonId: lessons[idx % lessons.length].id,
+                    earnedAt: new Date()
+                }
+            })
+        ));
+
+        // Messages
+        console.log('💬 Creating messages...');
+        const sampleMessages = [
             {
-                title: 'Numbers Practice Worksheet',
-                description: 'Practice counting and writing numbers 1-10',
-                instructions: 'Complete the worksheet by writing numbers and counting objects. Take your time and ask for help if needed.',
-                teacherId: teacher.id,
-                lessonId: lessons.find(l => l.title.includes('Numbers'))?.id || lessons[0].id,
-                assignedTo: [student.id],
-                dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
-                maxPoints: 100,
-                assignmentType: 'worksheet',
-                isActive: true
+                senderType: 'teacher',
+                senderId: teachers[0].id,
+                receiverType: 'parent',
+                receiverId: parents[0].id,
+                subject: 'Progress Update',
+                content: 'Emma is doing great in math! Keep up the support at home.',
+                relatedStudentId: students[0].id,
+                priority: 'medium'
             },
             {
-                title: 'Letter Recognition Exercise',
-                description: 'Identify and trace uppercase and lowercase letters A-F',
-                instructions: 'Look at each letter and trace it carefully. Say the letter name out loud as you trace.',
-                teacherId: teacher.id,
-                lessonId: lessons.find(l => l.title.includes('Letters'))?.id || lessons[1].id,
-                assignedTo: [student.id],
-                dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
-                maxPoints: 80,
-                assignmentType: 'exercise',
-                isActive: true
+                senderType: 'parent',
+                senderId: parents[1].id,
+                receiverType: 'teacher',
+                receiverId: teachers[1].id,
+                subject: 'Question About Assignment',
+                content: 'Could you clarify the instructions for Olivia’s art project?',
+                relatedStudentId: students[2].id,
+                priority: 'low'
             },
             {
-                title: 'Draw Your Family',
-                description: 'Create a drawing of your family members',
-                instructions: 'Draw a picture of your family. Include everyone who lives in your house. Use colors to make it bright and beautiful!',
-                teacherId: teacher.id,
-                lessonId: lessons.find(l => l.title.includes('Colors'))?.id || lessons[2].id,
-                assignedTo: [student.id],
-                dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10 days from now
-                maxPoints: 100,
-                assignmentType: 'project',
-                isActive: true
-            },
-            {
-                title: 'Animal Sounds Quiz',
-                description: 'Match animals with the sounds they make',
-                instructions: 'Listen to each sound and draw a line to the correct animal. You can ask a grown-up to help you listen.',
-                teacherId: teacher.id,
-                lessonId: lessons.find(l => l.title.includes('Animal'))?.id || lessons[3].id,
-                assignedTo: [student.id],
-                dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
-                maxPoints: 60,
-                assignmentType: 'quiz',
-                isActive: true
+                senderType: 'admin',
+                senderId: admins[0].id,
+                receiverType: 'teacher',
+                receiverId: teachers[0].id,
+                subject: 'System Maintenance',
+                content: 'Reminder: The system will undergo maintenance this weekend.',
+                relatedStudentId: null,
+                priority: 'high'
             }
         ];
 
-        for (const assignmentData of sampleAssignments) {
-            await Assignment.findOrCreate({
-                where: { title: assignmentData.title },
-                defaults: assignmentData
-            });
-        }
+        await Promise.all(sampleMessages.map(message =>
+            Message.create({
+                ...message,
+                messageType: 'general',
+                isRead: false
+            })
+        ));
 
         console.log('\n✅ Database seeded successfully!');
-        console.log('\n� Test Login Credentials:');
-        console.log('�👤 Admin: admin@tinylearn.com / Admin123!');
-        console.log('👩‍🏫 Teacher: teacher@tinylearn.com / Teacher123!');
-        console.log('👨‍👩‍👧 Parent: parent@tinylearn.com / Parent123!');
-        console.log('👶 Student: student@tinylearn.com / Student123!');
+        console.log('\n🔐 Test Login Credentials:');
+        console.log('   👩‍💼 Admin: admin@tinylearn.com / Admin123!');
+        console.log('   👩‍🏫 Teacher: teacher1@tinylearn.com / Teacher123!');
+        console.log('   👨‍👩‍👧 Parent: parent1@tinylearn.com / Parent123!');
+        console.log('   👧 Student: student1@tinylearn.com / Student123!');
         console.log('\n🎯 Ready to start TinyLearn!');
 
     } catch (error) {

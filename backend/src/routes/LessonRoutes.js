@@ -10,8 +10,8 @@ router.get('/:id', LessonController.getLessonById);
 router.get('/category/:category', LessonController.getLessonsByCategory);
 
 // Protected routes (require authentication)
-router.post('/', authGuard, LessonController.createLesson);
-router.put('/:id', authGuard, LessonController.updateLesson);
-router.delete('/:id', authGuard, LessonController.deleteLesson);
+router.post('/', authGuard(['teacher', 'admin']), LessonController.createLesson);
+router.put('/:id', authGuard(['teacher', 'admin']), LessonController.updateLesson);
+router.delete('/:id', authGuard(['teacher', 'admin']), LessonController.deleteLesson);
 
 module.exports = router;

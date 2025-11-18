@@ -1,15 +1,15 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 /**
  * AdminProtectedRoute Component
  * Protects admin-only routes with enhanced security
  */
-const AdminProtectedRoute = ({ children }) => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+const AdminProtectedRoute = () => {
+  const { user, isAuthenticated, loading } = useAuth();
 
   // Show loading state while checking authentication
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-red-900 to-slate-900">
         <div className="text-center">
@@ -43,7 +43,7 @@ const AdminProtectedRoute = ({ children }) => {
   }
 
   // User is authenticated and is an admin
-  return children;
+  return <Outlet />;
 };
 
 export default AdminProtectedRoute;

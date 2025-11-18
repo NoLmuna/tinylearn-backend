@@ -13,7 +13,8 @@ export function AuthProvider({ children }) {
       const token = apiService.getToken();
       if (token) {
         try {
-          const response = await apiService.getProfile();
+          const cachedRole = sessionStorage.getItem('tinylearn_last_role');
+          const response = await apiService.getProfile(cachedRole);
           if (response.success && response.data) {
             setUser(response.data);
           } else {
@@ -34,13 +35,16 @@ export function AuthProvider({ children }) {
     initAuth();
   }, []);
 
-  const login = async (credentials, showToast = true) => {
+  const login = async (credentials, showToast = true, roleHint = null) => {
     try {
       setLoading(true);
-      const response = await apiService.login(credentials);
+      const response = await apiService.login(credentials, roleHint);
       
       if (response.success && response.data) {
         const userData = response.data.user || response.data;
+        if (userData.role) {
+          sessionStorage.setItem('tinylearn_last_role', userData.role);
+        }
         setUser(userData);
         
         // Only show toast if requested (to prevent duplicate notifications)
@@ -68,6 +72,7 @@ export function AuthProvider({ children }) {
     try {
       await apiService.logout();
       setUser(null);
+      sessionStorage.removeItem('tinylearn_last_role');
       
       // Only show toast if requested (to prevent duplicate notifications)
       if (showToast) {

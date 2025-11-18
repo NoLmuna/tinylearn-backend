@@ -80,7 +80,7 @@ export default function AdminLogin() {
       const result = await login({
         email: form.email.trim(),
         password: form.password
-      }, false); // Disable AuthContext toast
+      }, false, 'admin'); // Disable AuthContext toast, force admin auth
 
       if (result.success) {
         // Verify user is actually an admin

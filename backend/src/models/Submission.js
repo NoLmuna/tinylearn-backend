@@ -22,7 +22,7 @@ module.exports = (sequelize) => {
             allowNull: false,
             field: 'student_id',
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         },
@@ -71,7 +71,7 @@ module.exports = (sequelize) => {
             allowNull: true,
             field: 'graded_by',
             references: {
-                model: 'users',
+                model: 'teachers',
                 key: 'id'
             }
         },

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
 import api from '../../../services/api';
@@ -24,6 +25,7 @@ import {
 
 export default function StudentDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
     stats: {
@@ -107,12 +109,7 @@ export default function StudentDashboard() {
   const startLesson = async (lessonId) => {
     try {
       toast.success('Starting lesson...', { icon: '🚀' });
-      // In a real app, you would navigate to the lesson page
-      // For now, we'll just show a success message
-      console.log('Starting lesson:', lessonId);
-      
-      // You could add navigation here:
-      // navigate(`/lessons/${lessonId}`);
+      navigate(`/student/lessons/${lessonId}`);
     } catch (error) {
       console.error('Failed to start lesson:', error);
       toast.error('Failed to start lesson');

@@ -1,15 +1,15 @@
 /* eslint-disable no-undef */
-const { Progress, Lesson, User } = require('../models/database');
+const { Progress, Lesson, Student } = require('../models/database');
 const send = require('../utils/response');
 
 const ProgressController = {
     // Get user's progress for all lessons
     getUserProgress: async (req, res) => {
         try {
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
 
             const progress = await Progress.findAll({
-                where: { userId },
+                where: { studentId },
                 include: [
                     {
                         model: Lesson,
@@ -31,10 +31,10 @@ const ProgressController = {
     getLessonProgress: async (req, res) => {
         try {
             const { lessonId } = req.params;
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
 
             const progress = await Progress.findOne({
-                where: { userId, lessonId },
+                where: { studentId, lessonId },
                 include: [
                     {
                         model: Lesson,
@@ -59,7 +59,7 @@ const ProgressController = {
     startLesson: async (req, res) => {
         try {
             const { lessonId } = req.params;
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
 
             // Check if lesson exists
             const lesson = await Lesson.findByPk(lessonId);
@@ -69,7 +69,7 @@ const ProgressController = {
 
             // Check if progress already exists
             let progress = await Progress.findOne({
-                where: { userId, lessonId }
+                where: { studentId, lessonId }
             });
 
             if (progress) {
@@ -82,7 +82,7 @@ const ProgressController = {
 
             // Create new progress entry
             progress = await Progress.create({
-                userId,
+                studentId,
                 lessonId,
                 status: 'in_progress'
             });
@@ -98,11 +98,11 @@ const ProgressController = {
     updateProgress: async (req, res) => {
         try {
             const { lessonId } = req.params;
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
             const { status, score, timeSpent, notes } = req.body;
 
             const progress = await Progress.findOne({
-                where: { userId, lessonId }
+                where: { studentId, lessonId }
             });
 
             if (!progress) {
@@ -137,11 +137,11 @@ const ProgressController = {
     completeLesson: async (req, res) => {
         try {
             const { lessonId } = req.params;
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
             const { score, notes } = req.body;
 
             const progress = await Progress.findOne({
-                where: { userId, lessonId }
+                where: { studentId, lessonId }
             });
 
             if (!progress) {
@@ -165,10 +165,10 @@ const ProgressController = {
     // Get progress statistics for a user
     getProgressStats: async (req, res) => {
         try {
-            const userId = req.user.userId || req.user.id;
+            const studentId = req.user.userId || req.user.id;
 
             const stats = await Progress.findAll({
-                where: { userId },
+                where: { studentId },
                 attributes: [
                     'status',
                     [Progress.sequelize.fn('COUNT', Progress.sequelize.col('id')), 'count'],
@@ -216,9 +216,9 @@ const ProgressController = {
                 offset: parseInt(offset),
                 include: [
                     {
-                        model: User,
-                        as: 'user',
-                        attributes: ['id', 'firstName', 'lastName', 'email', 'role']
+                        model: Student,
+                        as: 'student',
+                        attributes: ['id', 'firstName', 'lastName', 'email']
                     },
                     {
                         model: Lesson,

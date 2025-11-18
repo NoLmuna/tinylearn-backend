@@ -1,5 +1,5 @@
 /* eslint-disable no-undef */
-const { Assignment, User, Lesson, Submission } = require('../models');
+const { Assignment, Lesson, Submission, Teacher, Student, TeacherStudent } = require('../models');
 const { sendResponse } = require('../utils/response');
 
 // Create a new assignment
@@ -18,13 +18,27 @@ const createAssignment = async (req, res) => {
             return sendResponse(res, 400, 'error', 'Due date must be in the future');
         }
 
+        // If assignedTo is empty array, it means "assign to all students"
+        // We'll store it as empty array and handle it in queries
+        let finalAssignedTo = assignedTo || [];
+        
+        // If lessonId is provided, validate it belongs to the teacher
+        if (lessonId) {
+            const lesson = await Lesson.findOne({
+                where: { id: lessonId, teacherId }
+            });
+            if (!lesson) {
+                return sendResponse(res, 404, 'error', 'Lesson not found or does not belong to you');
+            }
+        }
+
         const assignment = await Assignment.create({
             title,
             description,
             instructions,
-            lessonId,
+            lessonId: lessonId || null, // Allow null for standalone assignments
             teacherId,
-            assignedTo,
+            assignedTo: finalAssignedTo, // Empty array means "all students"
             dueDate,
             maxPoints: maxPoints || 100,
             assignmentType: assignmentType || 'homework',
@@ -33,7 +47,7 @@ const createAssignment = async (req, res) => {
 
         const assignmentWithDetails = await Assignment.findByPk(assignment.id, {
             include: [
-                { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
                 { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
             ]
         });
@@ -65,7 +79,7 @@ const getAssignments = async (req, res) => {
 
             const assignments = await Assignment.findAndCountAll({
                 include: [
-                    { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                    { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
                     { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
                 ],
                 limit: parseInt(limit),
@@ -112,7 +126,7 @@ const getTeacherAssignments = async (req, res) => {
                     model: Submission, 
                     as: 'submissions',
                     include: [
-                        { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
+                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
                     ]
                 }
             ],
@@ -121,9 +135,21 @@ const getTeacherAssignments = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
+        // Get all students assigned to this teacher for "all students" assignments
+        const teacherStudents = await TeacherStudent.findAll({
+            where: { teacherId },
+            attributes: ['studentId']
+        });
+        const allStudentIds = teacherStudents.map(ts => ts.studentId);
+
         const assignmentsWithStats = assignments.rows.map(assignment => {
+            // If assignedTo is empty, it means "all students"
+            const totalAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
+                ? assignment.assignedTo.length
+                : allStudentIds.length;
+            
             const submissionStats = {
-                total: assignment.assignedTo ? assignment.assignedTo.length : 0,
+                total: totalAssigned,
                 submitted: assignment.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
                 graded: assignment.submissions.filter(s => s.status === 'graded').length,
                 pending: assignment.submissions.filter(s => s.status === 'submitted').length
@@ -159,23 +185,51 @@ const getStudentAssignments = async (req, res) => {
         const offset = (page - 1) * limit;
         
         // Find assignments where the student is assigned
-        // For MySQL, we need to use JSON_CONTAINS function
+        // Empty assignedTo array means "all students assigned to teacher"
         const { Op } = require('sequelize');
+        
+        // First, get the teacher IDs this student is assigned to
+        const teacherAssignments = await TeacherStudent.findAll({
+            where: { studentId },
+            attributes: ['teacherId']
+        });
+        const teacherIds = teacherAssignments.map(ta => ta.teacherId);
+
+        // Build query: assignment is for this student if:
+        // 1. assignedTo contains the studentId, OR
+        // 2. assignedTo is empty AND the assignment's teacherId is in the student's teacher list
         const assignments = await Assignment.findAndCountAll({
             where: {
                 [Op.and]: [
                     { isActive: true },
-                    Assignment.sequelize.where(
-                        Assignment.sequelize.fn('JSON_CONTAINS', 
-                            Assignment.sequelize.col('assigned_to'), 
-                            JSON.stringify(studentId)
-                        ), 
-                        true
-                    )
+                    {
+                        [Op.or]: [
+                            // Assignment specifically assigned to this student
+                            Assignment.sequelize.where(
+                                Assignment.sequelize.fn('JSON_CONTAINS', 
+                                    Assignment.sequelize.col('assigned_to'), 
+                                    JSON.stringify(studentId)
+                                ), 
+                                true
+                            ),
+                            // Assignment assigned to all students (empty array) AND teacher matches
+                            {
+                                [Op.and]: [
+                                    Assignment.sequelize.where(
+                                        Assignment.sequelize.fn('JSON_LENGTH',
+                                            Assignment.sequelize.col('assigned_to')
+                                        ),
+                                        0
+                                    ),
+                                    { teacherId: { [Op.in]: teacherIds } }
+                                ]
+                            }
+                        ]
+                    }
                 ]
             },
             include: [
-                { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
                 { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
                 { 
                     model: Submission, 
@@ -253,7 +307,7 @@ const updateAssignment = async (req, res) => {
 
         const assignmentWithDetails = await Assignment.findByPk(updatedAssignment.id, {
             include: [
-                { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
                 { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
             ]
         });
@@ -297,13 +351,13 @@ const getAssignmentById = async (req, res) => {
 
         const assignment = await Assignment.findByPk(id, {
             include: [
-                { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
                 { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
                 { 
                     model: Submission, 
                     as: 'submissions',
                     include: [
-                        { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
+                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
                     ]
                 }
             ]
@@ -315,8 +369,24 @@ const getAssignmentById = async (req, res) => {
 
         // Check permissions
         if (userRole === 'student') {
-            if (!assignment.assignedTo.includes(userId)) {
-                return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
+            // Check if assignment is assigned to this student
+            const isAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
+                ? assignment.assignedTo.includes(userId)
+                : false;
+            
+            // If not specifically assigned, check if it's "all students" and student is assigned to teacher
+            if (!isAssigned) {
+                if (assignment.assignedTo && assignment.assignedTo.length === 0) {
+                    // Empty array means "all students" - check if student is assigned to this teacher
+                    const teacherStudent = await TeacherStudent.findOne({
+                        where: { studentId: userId, teacherId: assignment.teacherId }
+                    });
+                    if (!teacherStudent) {
+                        return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
+                    }
+                } else {
+                    return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
+                }
             }
         } else if (userRole === 'teacher' && assignment.teacherId !== userId) {
             return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');

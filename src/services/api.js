@@ -5,6 +5,36 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const ROLE_ENDPOINTS = {
+  admin: '/admins',
+  teacher: '/teachers',
+  parent: '/parents',
+  student: '/students'
+};
+
+const ADMIN_MANAGEMENT_ENDPOINTS = {
+  admin: '/admins',
+  teacher: '/admins/teachers',
+  parent: '/admins/parents',
+  student: '/admins/students'
+};
+
+const ROLE_LIST_ENDPOINTS = {
+  admin: '/admins/users/admins',
+  teacher: '/admins/users/teachers',
+  student: '/admins/users/students',
+  parent: '/admins/users/parents'
+};
+
+const ROLE_DETAIL_ENDPOINTS = {
+  admin: '/admins/users/admins',
+  teacher: '/admins/users/teachers',
+  student: '/admins/users/students',
+  parent: '/admins/users/parents'
+};
+
+const LOGIN_PRIORITY = ['student', 'parent', 'teacher'];
+
 class ApiService {
   constructor() {
     this.cache = new Map();
@@ -139,12 +169,33 @@ class ApiService {
   }
 
   // === AUTH ENDPOINTS ===
-  async login(credentials) {
-    const response = await this.post('/users/login', credentials);
-    if (response.data?.token) {
-      this.setToken(response.data.token);
+  async login(credentials, roleHint = null) {
+    const preferredRoles = roleHint
+      ? [roleHint]
+      : (credentials?.role ? [credentials.role] : LOGIN_PRIORITY);
+
+    let lastError;
+    for (const role of preferredRoles) {
+      const endpoint = `${ROLE_ENDPOINTS[role]}/login`;
+      try {
+        const response = await this.post(endpoint, credentials);
+        if (response.data?.user && !response.data.user.role) {
+          response.data.user = { ...response.data.user, role };
+        }
+        if (response.data?.token) {
+          this.setToken(response.data.token);
+        }
+        return response;
+      } catch (error) {
+        lastError = error;
+        // Only continue looping if the endpoint explicitly says the user wasn't found
+        if (error.status && ![400, 401, 404].includes(error.status)) {
+          throw error;
+        }
+      }
     }
-    return response;
+
+    throw lastError || new Error('Login failed. Please check your credentials.');
   }
 
   async logout() {
@@ -152,56 +203,158 @@ class ApiService {
     return { success: true, message: 'Logged out successfully' };
   }
 
-  async getProfile() {
-    return this.get('/users/profile', true); // Cache profile data
+  async getProfile(role = null) {
+    if (role && ROLE_ENDPOINTS[role]) {
+      return this.get(`${ROLE_ENDPOINTS[role]}/profile`, true);
+    }
+    return this._cascadeRequest('GET', (currentRole) => `${ROLE_ENDPOINTS[currentRole]}/profile`);
   }
 
   // === USER MANAGEMENT ===
   async createUser(userData) {
-    // Use the register endpoint for admin-created accounts
-    return this.post('/users/register', userData);
+    const role = userData?.role?.toLowerCase();
+    if (!role || !ROLE_ENDPOINTS[role]) {
+      throw new Error('A valid user role is required to create an account');
+    }
+    return this.post(`${ROLE_ENDPOINTS[role]}/register`, userData);
   }
 
   async createStudent(userData) {
-    // Use the specific create-student endpoint
-    return this.post('/users/create-student', userData);
+    return this.createUser({ ...userData, role: 'student' });
   }
 
   async getUsers(role = null) {
-    if (role) {
-      return this.get(`/users/by-role?role=${role}`);
+    if (role && ROLE_LIST_ENDPOINTS[role]) {
+      return this._getRoleUsers(role);
     }
-    // Default to getting all users (admin only)
-    return this.get('/users/all');
+
+    const results = await Promise.all(
+      Object.keys(ROLE_LIST_ENDPOINTS).map((roleKey) => this._getRoleUsers(roleKey))
+    );
+
+    const data = results
+      .filter(result => result.success)
+      .flatMap(result => result.data);
+
+    return {
+      success: true,
+      data,
+      message: 'Users retrieved successfully'
+    };
+  }
+
+  async _getRoleUsers(role) {
+    const endpoint = ROLE_LIST_ENDPOINTS[role];
+    if (!endpoint) {
+      return { success: false, message: 'Unsupported role' };
+    }
+
+    const response = await this.get(endpoint);
+    if (response.success) {
+      const list = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      return {
+        success: true,
+        data: list.map(user => ({ ...user, role }))
+      };
+    }
+    return response;
   }
 
   async getTeachers() {
-    return this.get('/users/parent/teachers');
+    return this.get(ROLE_ENDPOINTS.teacher);
   }
 
   async getStudents() {
-    return this.get('/users/by-role?role=student');
+    return this.get(ROLE_ENDPOINTS.student);
   }
 
-  async updateUser(userId, userData) {
-    return this.put(`/users/${userId}`, userData);
+  async updateUser(userId, userData = {}, roleHint = null) {
+    const role = (roleHint || userData.role)?.toLowerCase();
+    const endpointBase = role
+      ? (ADMIN_MANAGEMENT_ENDPOINTS[role] || ROLE_ENDPOINTS[role])
+      : null;
+
+    if (endpointBase) {
+      return this.put(`${endpointBase}/${userId}`, userData);
+    }
+
+    return this._cascadeRequest(
+      'PUT',
+      (currentRole) => {
+        const base = ADMIN_MANAGEMENT_ENDPOINTS[currentRole] || ROLE_ENDPOINTS[currentRole];
+        return `${base}/${userId}`;
+      },
+      userData
+    );
   }
 
-  async deleteUser(userId) {
-    return this.delete(`/users/${userId}`);
+  async deleteUser(userId, roleHint = null) {
+    const role = roleHint?.toLowerCase();
+    const endpointBase = role
+      ? (ADMIN_MANAGEMENT_ENDPOINTS[role] || ROLE_ENDPOINTS[role])
+      : null;
+
+    if (endpointBase) {
+      return this.delete(`${endpointBase}/${userId}`);
+    }
+
+    return this._cascadeRequest('DELETE', (currentRole) => {
+      const base = ADMIN_MANAGEMENT_ENDPOINTS[currentRole] || ROLE_ENDPOINTS[currentRole];
+      return `${base}/${userId}`;
+    });
   }
 
-  async getUserById(userId) {
-    return this.get(`/users/${userId}`);
+  async getUserById(userId, roleHint = null) {
+    const role = roleHint?.toLowerCase();
+    if (role && ROLE_DETAIL_ENDPOINTS[role]) {
+      return this.get(`${ROLE_DETAIL_ENDPOINTS[role]}/${userId}`);
+    }
+    return this._cascadeRequest('GET', (currentRole) => {
+      if (ROLE_DETAIL_ENDPOINTS[currentRole]) {
+        return `${ROLE_DETAIL_ENDPOINTS[currentRole]}/${userId}`;
+      }
+      return `${ROLE_ENDPOINTS[currentRole]}/${userId}`;
+    });
   }
 
   async getSystemStats() {
-    return this.get('/users/stats');
+    return this.get('/admins/stats');
   }
 
-  async updateUserStatus(userId, status) {
-    return this.put(`/users/${userId}/status`, { accountStatus: status });
+  async updateTeacherAccountState(userId, payload = {}) {
+    const endpointBase = ADMIN_MANAGEMENT_ENDPOINTS.teacher || ROLE_ENDPOINTS.teacher;
+    return this.put(`${endpointBase}/${userId}/status`, {
+      accountStatus: payload.accountStatus,
+      isActive: payload.isActive
+    });
   }
+
+  async getAdmins() {
+    return this.get(ROLE_ENDPOINTS.admin);
+  }
+
+  async getAdminStats() {
+    return this.get('/admins/stats');
+  }
+
+  async getAdminTeachers(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/admins/teachers${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getAdminStudents(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/admins/students${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getAdminParents(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/admins/parents${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
 
   // === LESSONS ===
   async getLessons(filters = {}) {
@@ -329,6 +482,25 @@ class ApiService {
       studentId,
       relationship
     });
+  }
+
+  async _cascadeRequest(method, endpointBuilder, body) {
+    let lastError;
+    for (const role of Object.keys(ROLE_ENDPOINTS)) {
+      const endpoint = endpointBuilder(role);
+      try {
+        return await this.request(endpoint, {
+          method,
+          body: body ? JSON.stringify(body) : undefined
+        });
+      } catch (error) {
+        lastError = error;
+        if (!error.status || ![400, 401, 404].includes(error.status)) {
+          throw error;
+        }
+      }
+    }
+    throw lastError || new Error('Resource not found');
   }
 }
 

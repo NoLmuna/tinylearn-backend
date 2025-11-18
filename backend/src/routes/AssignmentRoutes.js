@@ -5,7 +5,7 @@ const AssignmentController = require('../controllers/AssignmentController');
 const userGuard = require('../middleware/user-guard');
 
 // Protected routes - all assignment routes require authentication
-router.use(userGuard);
+router.use(userGuard(['teacher', 'admin']));
 
 // Create assignment (teachers only)
 router.post('/', AssignmentController.createAssignment);

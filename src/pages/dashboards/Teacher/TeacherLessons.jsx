@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../../../services/api';
+import teacherService from '../../../services/teacher';
 import DashboardNavbar from '../../../components/ui/DashboardNavbar';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
@@ -79,12 +80,14 @@ const TeacherLessons = () => {
   const fetchLessons = async () => {
     try {
       setLoading(true);
-      const response = await api.getLessons();
+      const response = await teacherService.getLessons({ limit: 100 });
       
       if (response.success) {
         // Handle both direct array and nested object format
         const lessonsData = response.data;
-        const lessonsList = Array.isArray(lessonsData) ? lessonsData : (lessonsData.lessons || []);
+        const lessonsList = Array.isArray(lessonsData.lessons) 
+          ? lessonsData.lessons 
+          : (Array.isArray(lessonsData) ? lessonsData : []);
         setLessons(lessonsList);
       } else {
         toast.error('Failed to load lessons');

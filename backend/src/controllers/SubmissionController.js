@@ -1,5 +1,5 @@
 /* eslint-disable no-undef */
-const { Submission, Assignment, User } = require('../models');
+const { Submission, Assignment, Teacher, Student } = require('../models');
 const { sendResponse } = require('../utils/response');
 
 // Create a submission
@@ -45,7 +45,7 @@ const createSubmission = async (req, res) => {
         const submissionWithDetails = await Submission.findByPk(submission.id, {
             include: [
                 { model: Assignment, as: 'assignment', attributes: ['id', 'title', 'dueDate', 'maxPoints'] },
-                { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
+                { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
             ]
         });
 
@@ -84,7 +84,7 @@ const updateSubmission = async (req, res) => {
         const updatedSubmission = await Submission.findByPk(submission.id, {
             include: [
                 { model: Assignment, as: 'assignment', attributes: ['id', 'title', 'dueDate', 'maxPoints'] },
-                { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
+                { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
             ]
         });
 
@@ -137,8 +137,8 @@ const gradeSubmission = async (req, res) => {
         const gradedSubmission = await Submission.findByPk(submission.id, {
             include: [
                 { model: Assignment, as: 'assignment', attributes: ['id', 'title', 'maxPoints'] },
-                { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] },
-                { model: User, as: 'grader', attributes: ['id', 'firstName', 'lastName'] }
+                { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'grader', attributes: ['id', 'firstName', 'lastName'] }
             ]
         });
 
@@ -180,7 +180,7 @@ const getTeacherSubmissions = async (req, res) => {
                     where: { teacherId },
                     attributes: ['id', 'title', 'dueDate', 'maxPoints']
                 },
-                { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
+                { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
             ],
             limit: parseInt(limit),
             offset: parseInt(offset),
@@ -231,7 +231,7 @@ const getStudentSubmissions = async (req, res) => {
                     as: 'assignment',
                     attributes: ['id', 'title', 'dueDate', 'maxPoints'],
                     include: [
-                        { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] }
+                        { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] }
                     ]
                 }
             ],
@@ -269,11 +269,11 @@ const getSubmissionById = async (req, res) => {
                     as: 'assignment',
                     attributes: ['id', 'title', 'dueDate', 'maxPoints', 'teacherId'],
                     include: [
-                        { model: User, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] }
+                        { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] }
                     ]
                 },
-                { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName'] },
-                { model: User, as: 'grader', attributes: ['id', 'firstName', 'lastName'], required: false }
+                { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] },
+                { model: Teacher, as: 'grader', attributes: ['id', 'firstName', 'lastName'], required: false }
             ]
         });
 

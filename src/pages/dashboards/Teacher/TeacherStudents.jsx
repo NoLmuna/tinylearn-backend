@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import api from '../../../services/api';
+import teacherService from '../../../services/teacher';
 import DashboardNavbar from '../../../components/ui/DashboardNavbar';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
@@ -71,30 +71,26 @@ const TeacherStudents = () => {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const response = await api.getUsers();
+      const response = await teacherService.getAssignedStudents();
       
       if (response.success) {
-        // Handle both direct array and nested object format
-        const allUsers = response.data || [];
-        const studentUsers = allUsers.filter(user => user.role === 'student');
-        
-        // Add mock progress data for now (this would come from backend in production)
-        const studentsWithProgress = studentUsers.map(student => ({
+        const assignedStudents = response.data || [];
+        const studentsWithProgress = assignedStudents.map(student => ({
           ...student,
-          progress: Math.floor(Math.random() * 40) + 60, // 60-100%
-          lessonsCompleted: Math.floor(Math.random() * 20) + 5,
-          assignmentsCompleted: Math.floor(Math.random() * 15) + 3,
-          averageScore: Math.floor(Math.random() * 30) + 70, // 70-100%
-          lastActivity: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString()
+          progress: student.progress ?? (Math.floor(Math.random() * 40) + 60),
+          lessonsCompleted: student.lessonsCompleted ?? (Math.floor(Math.random() * 20) + 5),
+          assignmentsCompleted: student.assignmentsCompleted ?? (Math.floor(Math.random() * 15) + 3),
+          averageScore: student.averageScore ?? (Math.floor(Math.random() * 30) + 70),
+          lastActivity: student.lastActivity || new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString()
         }));
         
         setStudents(studentsWithProgress);
       } else {
-        toast.error('Failed to load students');
+        toast.error(response.message || 'Failed to load students');
       }
     } catch (error) {
       console.error('Failed to fetch students:', error);
-      toast.error('Failed to load students');
+      toast.error(error.message || 'Failed to load students');
     } finally {
       setLoading(false);
     }

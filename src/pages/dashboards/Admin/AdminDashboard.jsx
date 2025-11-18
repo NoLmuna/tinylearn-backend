@@ -28,6 +28,8 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState({});
   const [recentUsers, setRecentUsers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [systemAlerts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
@@ -47,15 +49,23 @@ export default function AdminDashboard() {
       console.log('👥 Users response:', usersResponse);
       
       if (usersResponse.success) {
-        const users = usersResponse.data;
-        console.log('✅ Users data:', users);
+        const usersList = usersResponse.data || [];
+        console.log('✅ Users data:', usersList);
+        setUsers(usersList);
+        setSelectedUser(prev => {
+          if (prev) {
+            const updated = usersList.find(u => u.id === prev.id);
+            return updated || usersList[0] || null;
+          }
+          return usersList[0] || null;
+        });
         
         // Calculate basic stats from users if available
-        const totalUsers = users.length;
-        const activeStudents = users.filter(u => u.role === 'student' && u.isActive).length;
-        const totalTeachers = users.filter(u => u.role === 'teacher').length;
-        const totalParents = users.filter(u => u.role === 'parent').length;
-        const totalAdmins = users.filter(u => u.role === 'admin').length;
+        const totalUsers = usersList.length;
+        const activeStudents = usersList.filter(u => u.role === 'student' && u.isActive).length;
+        const totalTeachers = usersList.filter(u => u.role === 'teacher').length;
+        const totalParents = usersList.filter(u => u.role === 'parent').length;
+        const totalAdmins = usersList.filter(u => u.role === 'admin').length;
         
         setStats({
           totalUsers,
@@ -67,7 +77,7 @@ export default function AdminDashboard() {
         });
 
         // Get recent users (last 10)
-        const recent = users
+        const recent = usersList
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 10)
           .map(user => ({
@@ -183,6 +193,42 @@ export default function AdminDashboard() {
       color: 'emerald'
     }
   ];
+
+  const getRoleBadgeClasses = (role) => {
+    switch (role) {
+      case 'admin':
+        return 'bg-red-100 text-red-700';
+      case 'teacher':
+        return 'bg-purple-100 text-purple-700';
+      case 'student':
+        return 'bg-green-100 text-green-700';
+      case 'parent':
+        return 'bg-orange-100 text-orange-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getStatusBadgeClasses = (status) => {
+    if (!status) return 'bg-gray-100 text-gray-700';
+    const normalized = status.toLowerCase();
+    if (['active', 'approved'].includes(normalized)) {
+      return 'bg-emerald-100 text-emerald-700';
+    }
+    if (['pending', 'review'].includes(normalized)) {
+      return 'bg-yellow-100 text-yellow-700';
+    }
+    return 'bg-red-100 text-red-700';
+  };
+
+  const formatFullDate = (dateString) => {
+    if (!dateString) return 'Unknown';
+    return new Date(dateString).toLocaleString();
+  };
+
+  const handleSelectUser = (userRecord) => {
+    setSelectedUser(userRecord);
+  };
 
   if (isLoading) {
     return (
@@ -331,6 +377,134 @@ export default function AdminDashboard() {
                 ))}
               </div>
             </Card>
+
+            {/* User Directory */}
+            <Card>
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">User Directory</h2>
+                  <p className="text-gray-600">Browse and inspect user records</p>
+                </div>
+                <Button variant="outline" onClick={() => navigate('/admin/users')}>
+                  View All
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {users.slice(0, 8).map((record) => (
+                        <tr key={`${record.role}-${record.id}`} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-semibold text-gray-900">
+                              {record.firstName} {record.lastName}
+                            </div>
+                            <div className="text-xs text-gray-500">{record.email}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeClasses(record.role)}`}>
+                              {record.role?.charAt(0).toUpperCase() + record.role?.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeClasses(record.accountStatus || (record.isActive ? 'active' : 'inactive'))}`}>
+                              {record.accountStatus || (record.isActive ? 'Active' : 'Inactive')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => handleSelectUser(record)}
+                              className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {users.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-gray-500 text-sm">
+                            No users available yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="border border-gray-100 rounded-xl p-6 bg-gray-50">
+                  {selectedUser ? (
+                    <>
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-full bg-indigo-200 flex items-center justify-center text-lg font-semibold text-indigo-700">
+                          {selectedUser.firstName?.[0]}
+                          {selectedUser.lastName?.[0]}
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900">
+                            {selectedUser.firstName} {selectedUser.lastName}
+                          </h3>
+                          <p className="text-sm text-gray-600">{selectedUser.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-gray-500">Role</p>
+                          <p className="font-semibold">{selectedUser.role}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Status</p>
+                          <p className="font-semibold capitalize">{selectedUser.accountStatus || (selectedUser.isActive ? 'active' : 'inactive')}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Created</p>
+                          <p className="font-semibold">{formatFullDate(selectedUser.createdAt)}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Last Update</p>
+                          <p className="font-semibold">{formatFullDate(selectedUser.updatedAt)}</p>
+                        </div>
+                        {selectedUser.grade && (
+                          <div>
+                            <p className="text-gray-500">Grade</p>
+                            <p className="font-semibold">{selectedUser.grade}</p>
+                          </div>
+                        )}
+                        {selectedUser.subjectSpecialty && (
+                          <div>
+                            <p className="text-gray-500">Specialty</p>
+                            <p className="font-semibold">{selectedUser.subjectSpecialty}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-6">
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => navigate('/admin/users')}
+                        >
+                          Manage User
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center text-gray-500 text-sm">
+                      Select a user to view details.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
           </div>
 
           {/* Sidebar */}
@@ -398,7 +572,7 @@ export default function AdminDashboard() {
               
               <div className="space-y-3">
                 {recentUsers.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
+                  <div key={`${user.role || 'user'}-${user.id}`} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
                         <span className="text-sm font-medium text-indigo-600">
