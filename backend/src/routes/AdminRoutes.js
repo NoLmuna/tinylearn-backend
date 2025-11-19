@@ -20,7 +20,7 @@ const requireAdmin = (req, res, next) => {
 router.post('/register', AdminController.registerAdmin);
 router.post('/login', AdminController.loginAdmin);
 
-router.use(authGuard);
+router.use(authGuard(['admin', 'teacher', 'student', 'parent']));
 router.use(requireAdmin);
 
 router.get('/profile', AdminController.getProfile);

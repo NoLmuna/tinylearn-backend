@@ -26,6 +26,12 @@ const LessonController = {
                         model: Teacher,
                         as: 'teacher',
                         attributes: ['id', 'firstName', 'lastName', 'email']
+                    },
+                    {
+                        model: Assignment,
+                        as: 'assignments',
+                        attributes: { exclude: ['createdAt', 'updatedAt'] },
+                        required: false
                     }
                 ]
             });

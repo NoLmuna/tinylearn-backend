@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
@@ -23,11 +23,49 @@ import {
   StarIcon
 } from '@heroicons/react/24/outline';
 
+const AGE_GROUP_RANGES = [
+  { label: 'Preschool (3-5)', min: 3, max: 5 },
+  { label: 'Kindergarten (5-6)', min: 5, max: 6 },
+  { label: 'Grade 1-2 (6-8)', min: 6, max: 8 },
+  { label: 'Grade 3-5 (8-11)', min: 8, max: 11 },
+  { label: 'Grade 6-8 (11-14)', min: 11, max: 14 },
+  { label: 'Grade 9-12 (14-18)', min: 14, max: 18 }
+];
+
+const deriveAgeGroupForStudent = (student) => {
+  if (!student) return null;
+
+  const numericAge = Number(student.age);
+  if (!Number.isNaN(numericAge) && numericAge > 0) {
+    const rangeMatch = AGE_GROUP_RANGES.find(range => numericAge >= range.min && numericAge <= range.max);
+    if (rangeMatch) {
+      return rangeMatch.label;
+    }
+  }
+
+  const gradeValue = student.grade?.toString().toLowerCase();
+  if (!gradeValue) return null;
+
+  if (gradeValue.includes('preschool')) return 'Preschool (3-5)';
+  if (gradeValue.includes('k') || gradeValue.includes('kindergarten')) return 'Kindergarten (5-6)';
+
+  const gradeNumberMatch = gradeValue.match(/\d+/);
+  if (gradeNumberMatch) {
+    const gradeNumber = parseInt(gradeNumberMatch[0], 10);
+    if (gradeNumber <= 2) return 'Grade 1-2 (6-8)';
+    if (gradeNumber <= 5) return 'Grade 3-5 (8-11)';
+    if (gradeNumber <= 8) return 'Grade 6-8 (11-14)';
+    return 'Grade 9-12 (14-18)';
+  }
+
+  return null;
+};
+
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [dashboardData, setDashboardData] = useState({
+  const defaultDashboardState = {
     stats: {
       completedLessons: 0,
       totalLessons: 0,
@@ -38,73 +76,67 @@ export default function StudentDashboard() {
     lessons: [],
     assignments: [],
     progress: []
-  });
+  };
+  const [dashboardData, setDashboardData] = useState(defaultDashboardState);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  const preferredAgeGroup = useMemo(() => deriveAgeGroupForStudent(user), [user]);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
+    if (!user) return;
+
     try {
       setLoading(true);
-      
-      // Fetch lessons, assignments, and progress in parallel
-      const [lessonsRes, assignmentsRes, progressRes] = await Promise.all([
-        api.getLessons(),
-        api.getAssignments(),
-        api.getProgress()
-      ]);
 
-      const lessons = lessonsRes.success ? lessonsRes.data : [];
-      const assignments = assignmentsRes.success ? assignmentsRes.data : [];
-      const progress = progressRes.success ? progressRes.data : [];
+      const baseFilters = { limit: 12, status: 'published' };
+      const lessonFilters = preferredAgeGroup ? { ...baseFilters, ageGroup: preferredAgeGroup } : baseFilters;
 
-      // Ensure data is in the correct format - handle both direct arrays and nested objects
-      const lessonsList = Array.isArray(lessons) ? lessons : (lessons.lessons || []);
-      const assignmentsList = Array.isArray(assignments) ? assignments : (assignments.assignments || []);
-      const progressList = Array.isArray(progress) ? progress : (progress.progress || []);
+      let lessonsResponse = await api.getLessons(lessonFilters);
+      let rawLessons = lessonsResponse.success ? lessonsResponse.data : [];
+      let lessonsList = Array.isArray(rawLessons) ? rawLessons : (rawLessons.lessons || []);
 
-      // Calculate stats
-      const completedLessons = progressList.filter(p => p.completed || p.isCompleted).length;
+      if (lessonsList.length === 0 && preferredAgeGroup) {
+        lessonsResponse = await api.getLessons(baseFilters);
+        rawLessons = lessonsResponse.success ? lessonsResponse.data : [];
+        lessonsList = Array.isArray(rawLessons) ? rawLessons : (rawLessons.lessons || []);
+      }
+
+      // Placeholder progress computation until student progress API is hooked up
+      const mockProgress = lessonsList.map((lesson, index) => ({
+        lessonId: lesson.id,
+        progress: Math.min(100, Math.round(((index + 1) / lessonsList.length) * 40)),
+        completed: false,
+        isCompleted: false
+      }));
+
+      const completedLessons = mockProgress.filter(p => p.completed || p.isCompleted).length;
       const totalLessons = lessonsList.length;
-      const pendingAssignments = assignmentsList.filter(a => !a.isCompleted && !a.completed).length;
       const overallProgress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
-      const streak = 7; // This would come from backend calculation in a real app
 
       setDashboardData({
         stats: {
           completedLessons,
           totalLessons,
-          pendingAssignments,
+          pendingAssignments: 0,
           overallProgress,
-          streak
+          streak: 0
         },
-        lessons: lessonsList.slice(0, 6), // Show recent 6 lessons
-        assignments: assignmentsList.slice(0, 5), // Show recent 5 assignments
-        progress: progressList
+        lessons: lessonsList.slice(0, 6),
+        assignments: [],
+        progress: mockProgress
       });
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
       toast.error('Failed to load dashboard data');
-      
-      // Fallback to empty data
-      setDashboardData({
-        stats: {
-          completedLessons: 0,
-          totalLessons: 0,
-          pendingAssignments: 0,
-          overallProgress: 0,
-          streak: 0
-        },
-        lessons: [],
-        assignments: [],
-        progress: []
-      });
+      setDashboardData(defaultDashboardState);
     } finally {
       setLoading(false);
     }
-  };
+  }, [preferredAgeGroup, user]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const startLesson = async (lessonId) => {
     try {

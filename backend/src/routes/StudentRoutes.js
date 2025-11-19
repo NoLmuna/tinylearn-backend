@@ -7,13 +7,14 @@ const authGuard = require('../middleware/user-guard');
 router.post('/register', StudentController.registerStudent);
 router.post('/login', StudentController.loginStudent);
 
-router.use(authGuard);
+router.use(authGuard(['student', 'teacher', 'admin']));
+
 router.get('/profile', StudentController.getProfile);
-router.get('/', StudentController.getStudents);
-router.get('/assigned', StudentController.getAssignedStudents);
-router.get('/:studentId', StudentController.getStudentById);
-router.put('/:studentId', StudentController.updateStudent);
-router.delete('/:studentId', StudentController.deleteStudent);
+router.get('/', authGuard(['admin', 'teacher']), StudentController.getStudents);
+router.get('/assigned', authGuard(['teacher', 'admin']), StudentController.getAssignedStudents);
+router.get('/:studentId', authGuard(['student', 'admin']), StudentController.getStudentById);
+router.put('/:studentId', authGuard(['student', 'admin']), StudentController.updateStudent);
+router.delete('/:studentId', authGuard(['admin']), StudentController.deleteStudent);
 
 module.exports = router;
 

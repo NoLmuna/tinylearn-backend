@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthContext } from './AuthContext.js';
 import apiService from '../services/api';
+import studentService from '../services/student';
 import toast from 'react-hot-toast';
 
 // Provider component
@@ -38,7 +39,15 @@ export function AuthProvider({ children }) {
   const login = async (credentials, showToast = true, roleHint = null) => {
     try {
       setLoading(true);
-      const response = await apiService.login(credentials, roleHint);
+      let response;
+
+      if (roleHint === 'student') {
+        response = await studentService.loginStudent(credentials, { silent: true });
+      } else if (roleHint === 'parent') {
+        response = await studentService.loginParent(credentials, { silent: true });
+      } else {
+        response = await apiService.login(credentials, roleHint);
+      }
       
       if (response.success && response.data) {
         const userData = response.data.user || response.data;

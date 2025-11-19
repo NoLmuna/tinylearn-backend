@@ -7,11 +7,11 @@ const authGuard = require('../middleware/user-guard');
 router.post('/register', ParentController.registerParent);
 router.post('/login', ParentController.loginParent);
 
-router.use(authGuard);
+router.use(authGuard(['parent', 'admin']));
 router.get('/profile', ParentController.getProfile);
-router.get('/', ParentController.getParents);
+router.get('/', authGuard(['admin']), ParentController.getParents);
 router.put('/:parentId', ParentController.updateParent);
-router.delete('/:parentId', ParentController.deleteParent);
+router.delete('/:parentId', authGuard(['admin']), ParentController.deleteParent);
 
 module.exports = router;
 

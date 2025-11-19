@@ -2,28 +2,28 @@
 const express = require('express');
 const router = express.Router();
 const AssignmentController = require('../controllers/AssignmentController');
-const userGuard = require('../middleware/user-guard');
+const authGuard = require('../middleware/user-guard');
 
-// Protected routes - all assignment routes require authentication
-router.use(userGuard(['teacher', 'admin']));
+const teacherOrAdmin = ['teacher', 'admin'];
+const studentAccess = ['student', 'teacher', 'admin'];
 
-// Create assignment (teachers only)
-router.post('/', AssignmentController.createAssignment);
+// Create assignment (teachers/admin only)
+router.post('/', authGuard(teacherOrAdmin), AssignmentController.createAssignment);
 
-// Get assignments (role-based)
-router.get('/', AssignmentController.getAssignments);
+// Get assignments (students can read, teachers/admin can manage)
+router.get('/', authGuard(studentAccess), AssignmentController.getAssignments);
 
-// Get assignments
-router.get('/teacher', AssignmentController.getTeacherAssignments);
-router.get('/student', AssignmentController.getStudentAssignments);
+// Role-specific listings
+router.get('/teacher', authGuard(teacherOrAdmin), AssignmentController.getTeacherAssignments);
+router.get('/student', authGuard(studentAccess), AssignmentController.getStudentAssignments);
 
 // Get specific assignment
-router.get('/:id', AssignmentController.getAssignmentById);
+router.get('/:id', authGuard(studentAccess), AssignmentController.getAssignmentById);
 
-// Update assignment (teachers only)
-router.put('/:id', AssignmentController.updateAssignment);
+// Update assignment (teachers/admin only)
+router.put('/:id', authGuard(teacherOrAdmin), AssignmentController.updateAssignment);
 
-// Delete assignment (teachers only - soft delete)
-router.delete('/:id', AssignmentController.deleteAssignment);
+// Delete assignment (teachers/admin only - soft delete)
+router.delete('/:id', authGuard(teacherOrAdmin), AssignmentController.deleteAssignment);
 
 module.exports = router;

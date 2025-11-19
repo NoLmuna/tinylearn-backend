@@ -7,6 +7,8 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Lessons from './pages/Lessons';
 import Login from './pages/Auth/Login';
+import StudentLogin from './pages/Auth/StudentLogin.jsx';
+import ParentLogin from './pages/Auth/ParentLogin.jsx';
 import AdminLogin from './pages/Auth/AdminLogin';
 import StudentDashboard from './pages/dashboards/Student/StudentDashboard';
 import StudentLessons from './pages/dashboards/Student/StudentLessons';
@@ -43,6 +45,8 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/student/login" element={<StudentLogin />} />
+          <Route path="/parent/login" element={<ParentLogin />} />
           
           {/* Admin Routes - Separate login and protected section */}
           <Route path="/admin/login" element={<AdminLogin />} />

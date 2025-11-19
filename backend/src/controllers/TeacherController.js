@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Teacher, Student, TeacherStudent, Lesson } = require('../models/database');
+const { Teacher, Student, TeacherStudent, Lesson, Assignment } = require('../models/database');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -294,11 +294,19 @@ const TeacherController = {
                 limit: parseInt(limit),
                 offset: parseInt(offset),
                 order: [['createdAt', 'DESC']],
-                include: [{
-                    model: Teacher,
-                    as: 'teacher',
-                    attributes: ['id', 'firstName', 'lastName', 'email']
-                }]
+                include: [
+                    {
+                        model: Teacher,
+                        as: 'teacher',
+                        attributes: ['id', 'firstName', 'lastName', 'email']
+                    },
+                    {
+                        model: Assignment,
+                        as: 'assignments',
+                        attributes: { exclude: ['createdAt', 'updatedAt'] },
+                        required: false
+                    }
+                ]
             });
 
             return send.sendResponseMessage(res, 200, {
