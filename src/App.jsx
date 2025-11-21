@@ -24,6 +24,7 @@ import TeacherAssignments from './pages/dashboards/Teacher/TeacherAssignments.js
 import TeacherStudents from './pages/dashboards/Teacher/TeacherStudents.jsx';
 import TeacherMessages from './pages/dashboards/Teacher/TeacherMessagesRedesigned.jsx';
 import GradeAssignment from './pages/dashboards/Teacher/GradeAssignment.jsx';
+import EditAssignment from './pages/dashboards/Teacher/EditAssignment.jsx';
 import ViewLesson from './pages/dashboards/Teacher/ViewLesson.jsx';
 import ViewAssignment from './pages/dashboards/Teacher/ViewAssignment.jsx';
 import ParentDashboard from './pages/dashboards/Parent/ParentDashboard';
@@ -75,6 +76,7 @@ function App() {
                   <Route path="lessons/:lessonId" element={<ViewLesson />} />
                   <Route path="assignments" element={<TeacherAssignments />} />
                   <Route path="assignments/create" element={<CreateAssignment />} />
+                  <Route path="assignments/:assignmentId/edit" element={<EditAssignment />} />
                   <Route path="assignments/:assignmentId/grade" element={<GradeAssignment />} />
                   <Route path="assignments/:assignmentId" element={<ViewAssignment />} />
                   <Route path="students" element={<TeacherStudents />} />

@@ -42,10 +42,14 @@ class ApiService {
   }
 
   /**
-   * Make HTTP request with enhanced error handling
+   * Make HTTP request with enhanced error handling and timeout
    */
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    // Longer timeout for write operations (POST, PUT, PATCH, DELETE)
+    const isWriteOperation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method || 'GET');
+    const timeout = options.timeout || (isWriteOperation ? 15000 : 8000); // 15s for writes, 8s for reads
+    
     const config = {
       headers: {
         'Content-Type': 'application/json',
@@ -60,8 +64,27 @@ class ApiService {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
-      const response = await fetch(url, config);
+      // Ensure body is properly handled
+      const fetchConfig = {
+        method: config.method || 'GET',
+        headers: config.headers,
+        signal: controller.signal
+      };
+      
+      // Only add body for methods that support it
+      if (['POST', 'PUT', 'PATCH'].includes(fetchConfig.method) && config.body) {
+        fetchConfig.body = config.body;
+      }
+      
+      const response = await fetch(url, fetchConfig);
+      
+      clearTimeout(timeoutId);
+      
       let data;
       
       try {
@@ -84,6 +107,13 @@ class ApiService {
         message: data.message || 'Success'
       };
     } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Handle timeout/abort
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout: The server took too long to respond (${timeout}ms)`);
+      }
+      
       // Network or parsing errors
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         throw new Error('Network error: Unable to connect to server');
@@ -433,7 +463,27 @@ class ApiService {
   }
 
   async gradeSubmission(submissionId, gradeData) {
-    return this.put(`/submissions/${submissionId}/grade`, gradeData);
+    return this.request(`/submissions/${submissionId}/grade`, {
+      method: 'PATCH',
+      body: JSON.stringify(gradeData),
+      timeout: 15000 // 15 seconds for grading operations (may involve multiple DB queries)
+    });
+  }
+
+  async getTeacherSubmissions(filters = {}) {
+    const queryString = new URLSearchParams(filters).toString();
+    const endpoint = `/submissions/teacher${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getStudentSubmissions(filters = {}) {
+    const queryString = new URLSearchParams(filters).toString();
+    const endpoint = `/submissions/student${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getDetailedProgress() {
+    return this.get('/progress/detailed');
   }
 
   // === MESSAGES ===

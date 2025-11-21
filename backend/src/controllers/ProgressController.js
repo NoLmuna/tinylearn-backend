@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
 const { Progress, Lesson, Student } = require('../models/database');
 const send = require('../utils/response');
+const ProgressService = require('../services/ProgressService');
 
 const ProgressController = {
     // Get user's progress for all lessons
@@ -162,41 +163,37 @@ const ProgressController = {
         }
     },
 
-    // Get progress statistics for a user
+    // Get progress statistics for a user (enhanced with assignments)
     getProgressStats: async (req, res) => {
         try {
             const studentId = req.user.userId || req.user.id;
 
-            const stats = await Progress.findAll({
-                where: { studentId },
-                attributes: [
-                    'status',
-                    [Progress.sequelize.fn('COUNT', Progress.sequelize.col('id')), 'count'],
-                    [Progress.sequelize.fn('AVG', Progress.sequelize.col('score')), 'averageScore'],
-                    [Progress.sequelize.fn('SUM', Progress.sequelize.col('time_spent')), 'totalTimeSpent']
-                ],
-                group: ['status'],
-                raw: true
-            });
-
-            const totalLessons = await Lesson.count({ where: { isActive: true } });
-            const completedLessons = stats.find(s => s.status === 'completed')?.count || 0;
-            const inProgressLessons = stats.find(s => s.status === 'in_progress')?.count || 0;
-            const averageScore = stats.find(s => s.status === 'completed')?.averageScore || 0;
-            const totalTimeSpent = stats.reduce((sum, s) => sum + (parseInt(s.totalTimeSpent) || 0), 0);
-
-            const progressStats = {
-                totalLessons,
-                completedLessons,
-                inProgressLessons,
-                completionRate: totalLessons > 0 ? ((completedLessons / totalLessons) * 100).toFixed(2) : 0,
-                averageScore: parseFloat(averageScore).toFixed(2),
-                totalTimeSpent: totalTimeSpent
-            };
+            // Use the new ProgressService for comprehensive progress calculation
+            const progressStats = await ProgressService.calculateStudentProgress(studentId);
 
             return send.sendResponseMessage(res, 200, progressStats, 'Progress statistics retrieved successfully');
         } catch (error) {
             console.error('Get progress stats error:', error);
+            return send.sendErrorMessage(res, 500, error);
+        }
+    },
+
+    // Get detailed progress with recent activity
+    getDetailedProgress: async (req, res) => {
+        try {
+            const studentId = req.user.userId || req.user.id;
+            const userRole = req.user.role;
+
+            // Students can only view their own progress
+            if (userRole === 'student' && studentId !== (req.user.userId || req.user.id)) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
+            }
+
+            const detailedProgress = await ProgressService.getDetailedProgress(studentId);
+
+            return send.sendResponseMessage(res, 200, detailedProgress, 'Detailed progress retrieved successfully');
+        } catch (error) {
+            console.error('Get detailed progress error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
     },

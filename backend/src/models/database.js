@@ -5,7 +5,19 @@ const { Sequelize } = require('sequelize');
 const sequelize = new Sequelize(dbconfig.database, dbconfig.user, dbconfig.password, {
     host: dbconfig.host,
     dialect: dbconfig.dialect,
-    logging: false // Disable SQL logging in production
+    logging: false, // Disable SQL logging in production
+    pool: {
+        max: 10,
+        min: 2,
+        acquire: 30000,
+        idle: 10000
+    },
+    dialectOptions: {
+        connectTimeout: 10000 // 10 seconds connection timeout
+    },
+    retry: {
+        max: 3 // Retry failed queries up to 3 times
+    }
 });
 
 sequelize.authenticate()
@@ -25,6 +37,7 @@ const MessageModel = require('./Message');
 const StudentParentModel = require('./StudentParent');
 const TeacherStudentModel = require('./TeacherStudent');
 const AchievementModel = require('./Achievement');
+const AssignmentAnswerModel = require('./AssignmentAnswer');
 
 // Initialize models
 const Admin = AdminModel(sequelize);
@@ -39,6 +52,7 @@ const Message = MessageModel(sequelize);
 const StudentParent = StudentParentModel(sequelize);
 const TeacherStudent = TeacherStudentModel(sequelize);
 const Achievement = AchievementModel(sequelize);
+const AssignmentAnswer = AssignmentAnswerModel(sequelize);
 
 // Set up associations
 // Teacher and Lesson associations
@@ -213,6 +227,27 @@ TeacherStudent.belongsTo(Student, {
     as: 'student'
 });
 
+// AssignmentAnswer associations
+Assignment.hasMany(AssignmentAnswer, {
+    foreignKey: 'assignmentId',
+    as: 'answers'
+});
+
+AssignmentAnswer.belongsTo(Assignment, {
+    foreignKey: 'assignmentId',
+    as: 'assignment'
+});
+
+Student.hasMany(AssignmentAnswer, {
+    foreignKey: 'studentId',
+    as: 'assignmentAnswers'
+});
+
+AssignmentAnswer.belongsTo(Student, {
+    foreignKey: 'studentId',
+    as: 'student'
+});
+
 sequelize.sync({ force: false })
 .then(() => console.log('✅ Database synced successfully!'))
 .catch((error) => console.error('❌ Error during database sync:', error));
@@ -231,7 +266,8 @@ const db = {
     Message,
     StudentParent,
     Achievement,
-    TeacherStudent
+    TeacherStudent,
+    AssignmentAnswer
 };
 
 module.exports = db;

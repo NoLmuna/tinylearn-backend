@@ -2,6 +2,34 @@
 const { Assignment, Lesson, Submission, Teacher, Student, TeacherStudent } = require('../models');
 const { sendResponse } = require('../utils/response');
 
+/**
+ * Helper function to build order clause for sorting
+ * @param {string} sortBy - Field to sort by
+ * @param {string} sortOrder - ASC or DESC
+ * @returns {Array} Sequelize order clause
+ */
+const buildOrderClause = (sortBy, sortOrder) => {
+    const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const validSortFields = ['createdAt', 'dueDate', 'title', 'assignmentType', 'maxPoints'];
+    
+    if (!validSortFields.includes(sortBy)) {
+        return [['dueDate', 'ASC']];
+    }
+
+    switch (sortBy) {
+        case 'dueDate':
+            return [['dueDate', order]];
+        case 'title':
+            return [['title', order]];
+        case 'assignmentType':
+            return [['assignmentType', order]];
+        case 'maxPoints':
+            return [['maxPoints', order]];
+        default:
+            return [['createdAt', order]];
+    }
+};
+
 // Create a new assignment
 const createAssignment = async (req, res) => {
     try {
@@ -109,30 +137,84 @@ const getAssignments = async (req, res) => {
 const getTeacherAssignments = async (req, res) => {
     try {
         const teacherId = req.user.userId;
-        const { page = 1, limit = 10, status = 'all' } = req.query;
+        const { 
+            page = 1, 
+            limit = 10, 
+            status = 'all',
+            sortBy = 'createdAt',
+            sortOrder = 'DESC',
+            assignmentType,
+            gradeLevel,
+            subject,
+            completionStatus
+        } = req.query;
 
         const offset = (page - 1) * limit;
+        const { Op } = require('sequelize');
         const whereClause = { teacherId };
 
+        // Filter by status
         if (status !== 'all') {
             whereClause.isActive = status === 'active';
+        }
+
+        // Filter by assignment type
+        if (assignmentType) {
+            whereClause.assignmentType = assignmentType;
+        }
+
+        // Filter by grade level (if lesson has grade info, or we can add it to assignment)
+        // For now, we'll filter by lesson age group which correlates to grade
+        const includeLesson = {
+            model: Lesson,
+            as: 'lesson',
+            attributes: ['id', 'title', 'ageGroup'],
+            required: false
+        };
+
+        if (gradeLevel) {
+            includeLesson.where = { ageGroup: gradeLevel };
+            includeLesson.required = true;
+        }
+
+        // Filter by subject (category from lesson)
+        if (subject) {
+            if (!includeLesson.where) includeLesson.where = {};
+            includeLesson.where.category = subject;
+            includeLesson.required = true;
+        }
+
+        // Build order clause
+        let orderClause = [];
+        const validSortFields = ['createdAt', 'dueDate', 'title', 'assignmentType', 'maxPoints'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        
+        if (sortBy === 'dueDate') {
+            orderClause = [['dueDate', order]];
+        } else if (sortBy === 'title') {
+            orderClause = [['title', order]];
+        } else {
+            orderClause = [[sortField, order]];
         }
 
         const assignments = await Assignment.findAndCountAll({
             where: whereClause,
             include: [
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
+                includeLesson,
                 { 
                     model: Submission, 
                     as: 'submissions',
                     include: [
-                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
-                    ]
+                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName', 'grade'] }
+                    ],
+                    required: false
                 }
             ],
             limit: parseInt(limit),
             offset: parseInt(offset),
-            order: [['createdAt', 'DESC']]
+            order: orderClause,
+            distinct: true // Important for count with includes
         });
 
         // Get all students assigned to this teacher for "all students" assignments
@@ -142,24 +224,47 @@ const getTeacherAssignments = async (req, res) => {
         });
         const allStudentIds = teacherStudents.map(ts => ts.studentId);
 
-        const assignmentsWithStats = assignments.rows.map(assignment => {
+        let assignmentsWithStats = assignments.rows.map(assignment => {
             // If assignedTo is empty, it means "all students"
             const totalAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
                 ? assignment.assignedTo.length
                 : allStudentIds.length;
             
+            const submitted = assignment.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length;
+            const graded = assignment.submissions.filter(s => s.status === 'graded').length;
+            const pending = assignment.submissions.filter(s => s.status === 'submitted').length;
+            
             const submissionStats = {
                 total: totalAssigned,
-                submitted: assignment.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
-                graded: assignment.submissions.filter(s => s.status === 'graded').length,
-                pending: assignment.submissions.filter(s => s.status === 'submitted').length
+                submitted,
+                graded,
+                pending,
+                notSubmitted: totalAssigned - submitted
             };
+
+            // Determine completion status
+            let completionStatus = 'not_started';
+            if (graded === totalAssigned && totalAssigned > 0) {
+                completionStatus = 'all_graded';
+            } else if (submitted === totalAssigned && totalAssigned > 0) {
+                completionStatus = 'all_submitted';
+            } else if (submitted > 0) {
+                completionStatus = 'partial';
+            }
 
             return {
                 ...assignment.toJSON(),
-                submissionStats
+                submissionStats,
+                completionStatus
             };
         });
+
+        // Filter by completion status if specified
+        if (completionStatus) {
+            assignmentsWithStats = assignmentsWithStats.filter(assignment => 
+                assignment.completionStatus === completionStatus
+            );
+        }
 
         sendResponse(res, 200, 'success', 'Assignments retrieved successfully', {
             assignments: assignmentsWithStats,
@@ -180,7 +285,16 @@ const getTeacherAssignments = async (req, res) => {
 const getStudentAssignments = async (req, res) => {
     try {
         const studentId = req.user.userId;
-        const { page = 1, limit = 10, status = 'all' } = req.query;
+        const { 
+            page = 1, 
+            limit = 10, 
+            status = 'all',
+            sortBy = 'dueDate',
+            sortOrder = 'ASC',
+            assignmentType,
+            subject,
+            completionStatus
+        } = req.query;
 
         const offset = (page - 1) * limit;
         
@@ -230,7 +344,13 @@ const getStudentAssignments = async (req, res) => {
             },
             include: [
                 { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
+                { 
+                    model: Lesson, 
+                    as: 'lesson', 
+                    attributes: ['id', 'title', 'category', 'ageGroup'],
+                    required: false,
+                    ...(subject ? { where: { category: subject } } : {})
+                },
                 { 
                     model: Submission, 
                     as: 'submissions',
@@ -240,17 +360,36 @@ const getStudentAssignments = async (req, res) => {
             ],
             limit: parseInt(limit),
             offset: parseInt(offset),
-            order: [['dueDate', 'ASC']]
+            order: buildOrderClause(sortBy, sortOrder),
+            distinct: true
         });
+
+        // Filter by assignment type
+        if (assignmentType) {
+            assignments.rows = assignments.rows.filter(a => a.assignmentType === assignmentType);
+        }
 
         const assignmentsWithSubmission = assignments.rows.map(assignment => {
             const submission = assignment.submissions.length > 0 ? assignment.submissions[0] : null;
             const isOverdue = new Date(assignment.dueDate) < new Date() && (!submission || submission.status === 'draft');
             
+            // Determine completion status
+            let compStatus = 'not_started';
+            if (submission) {
+                if (submission.status === 'graded') {
+                    compStatus = 'graded';
+                } else if (submission.status === 'submitted') {
+                    compStatus = 'submitted';
+                } else {
+                    compStatus = 'draft';
+                }
+            }
+            
             return {
                 ...assignment.toJSON(),
                 submission,
                 isOverdue,
+                completionStatus: compStatus,
                 daysUntilDue: Math.ceil((new Date(assignment.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
             };
         });
@@ -272,6 +411,13 @@ const getStudentAssignments = async (req, res) => {
                         return true;
                 }
             });
+        }
+
+        // Filter by completion status
+        if (completionStatus) {
+            filteredAssignments = filteredAssignments.filter(assignment => 
+                assignment.completionStatus === completionStatus
+            );
         }
 
         sendResponse(res, 200, 'success', 'Assignments retrieved successfully', {

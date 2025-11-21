@@ -63,11 +63,11 @@ const ViewAssignment = () => {
           toast.success('Assignment deleted successfully');
           navigate('/teacher/assignments');
         } else {
-          toast.error('Failed to delete assignment');
+          toast.error(response.message || 'Failed to delete assignment');
         }
       } catch (error) {
         console.error('Failed to delete assignment:', error);
-        toast.error('Failed to delete assignment');
+        toast.error(error.message || 'Failed to delete assignment');
       }
     }
   };
@@ -278,9 +278,11 @@ const ViewAssignment = () => {
           </Card>
 
           {/* Submissions List */}
-          {submissions.length > 0 && (
-            <Card className="p-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Submissions</h2>
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Submissions {submissions.length > 0 && `(${submissions.length})`}
+            </h2>
+            {submissions.length > 0 ? (
               <div className="space-y-3">
                 {submissions.map((submission) => (
                   <div
@@ -290,10 +292,12 @@ const ViewAssignment = () => {
                     <div className="flex items-center gap-4">
                       <div>
                         <div className="font-semibold text-gray-800">
-                          {submission.student ? `${submission.student.firstName} ${submission.student.lastName}` : 'Unknown Student'}
+                          {submission.student 
+                            ? `${submission.student.firstName || ''} ${submission.student.lastName || ''}`.trim()
+                            : submission.studentName || `Student ${submission.studentId || 'Unknown'}`}
                         </div>
                         <div className="text-sm text-gray-500">
-                          Submitted: {submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString() : 'N/A'}
+                          Submitted: {submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString() : 'Not submitted'}
                         </div>
                       </div>
                     </div>
@@ -308,12 +312,20 @@ const ViewAssignment = () => {
                       {submission.score !== null && submission.score !== undefined && (
                         <div className="text-sm font-medium text-gray-700">
                           {submission.score} / {assignment.maxPoints} points
+                          {submission.percentage && (
+                            <span className="ml-1 text-gray-500">
+                              ({parseFloat(submission.percentage).toFixed(1)}%)
+                            </span>
+                          )}
                         </div>
                       )}
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(`/teacher/assignments/${assignmentId}/grade?submission=${submission.id}`)}
+                        onClick={() => {
+                          navigate(`/teacher/assignments/${assignmentId}/grade?submission=${submission.id}`);
+                        }}
+                        className="min-w-[80px]"
                       >
                         {submission.status === 'graded' ? 'View' : 'Grade'}
                       </Button>
@@ -321,8 +333,16 @@ const ViewAssignment = () => {
                   </div>
                 ))}
               </div>
-            </Card>
-          )}
+            ) : (
+              <div className="text-center py-8">
+                <UserGroupIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No submissions yet</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Students can submit their work once they start the assignment
+                </p>
+              </div>
+            )}
+          </Card>
 
           {/* Assignment Metadata */}
           <Card className="p-6">

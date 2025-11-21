@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { 
   HeartIcon, 
@@ -18,205 +18,100 @@ import { useAuth } from '../../../hooks/useAuth';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import DashboardNavbar from '../../../components/ui/DashboardNavbar';
-import api from '../../../services/api';
 
 const ParentDashboard = () => {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [dashboardData, setDashboardData] = useState({
+  
+  // Static mock data for dashboard
+  const dashboardData = {
     stats: {
-      totalChildren: 0,
-      averageProgress: 0,
-      totalMessages: 0,
-      upcomingAssignments: 0
+      totalChildren: 2,
+      averageProgress: 85,
+      totalMessages: 5,
+      upcomingAssignments: 3
     },
-    children: [],
-    messages: []
-  });
-  const [selectedChild, setSelectedChild] = useState(null);
+    children: [
+      {
+        id: 'child-1',
+        firstName: 'Emma',
+        lastName: 'Johnson',
+        grade: '5th Grade',
+        recentProgress: {
+          completedLessons: 12,
+          totalLessons: 15,
+          averageScore: 92
+        },
+        upcomingAssignments: [
+          { id: 'assign-1', title: 'Math Homework - Chapter 5' },
+          { id: 'assign-2', title: 'Science Project - Solar System' }
+        ]
+      },
+      {
+        id: 'child-2',
+        firstName: 'Lucas',
+        lastName: 'Johnson',
+        grade: '3rd Grade',
+        recentProgress: {
+          completedLessons: 8,
+          totalLessons: 10,
+          averageScore: 78
+        },
+        upcomingAssignments: [
+          { id: 'assign-3', title: 'Reading Comprehension' }
+        ]
+      }
+    ],
+    messages: [
+      {
+        id: 'msg-1',
+        sender: 'Ms. Sarah Williams',
+        subject: 'Parent-Teacher Conference',
+        preview: 'I would like to schedule a meeting to discuss Emma\'s progress in mathematics...',
+        timestamp: '2024-01-15T10:30:00Z',
+        isRead: false
+      },
+      {
+        id: 'msg-2',
+        sender: 'Mr. David Chen',
+        subject: 'Science Fair Reminder',
+        preview: 'Just a reminder that the science fair project is due next Friday...',
+        timestamp: '2024-01-14T14:20:00Z',
+        isRead: true
+      },
+      {
+        id: 'msg-3',
+        sender: 'Ms. Sarah Williams',
+        subject: 'Weekly Update',
+        preview: 'Emma had a great week! She completed all her assignments on time...',
+        timestamp: '2024-01-13T09:15:00Z',
+        isRead: true
+      }
+    ]
+  };
+
+  const teachers = [
+    { id: 'teacher-1', firstName: 'Sarah', lastName: 'Williams' },
+    { id: 'teacher-2', firstName: 'David', lastName: 'Chen' },
+    { id: 'teacher-3', firstName: 'Maria', lastName: 'Garcia' }
+  ];
+
+  const [selectedChild, setSelectedChild] = useState(dashboardData.children[0]);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [newMessage, setNewMessage] = useState({ 
     subject: '', 
     content: '', 
     receiverId: '' 
   });
-  const [teachers, setTeachers] = useState([]);
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      setLoading(true);
-      console.log('🔍 Fetching parent dashboard data...');
-      console.log('👤 Current user:', user);
-      
-      // Fetch all data in parallel
-      const [
-        childrenRes, 
-        conversationsRes
-      ] = await Promise.all([
-        api.getParentChildren(),
-        api.getConversations()
-      ]);
-
-      console.log('👨‍👩‍👧‍👦 Children response:', childrenRes);
-      console.log('📧 Conversations response:', conversationsRes);
-
-      // Handle the data structure correctly - backend returns children array directly in data
-      const childrenData = childrenRes.success ? (childrenRes.data || []) : [];
-      const conversationsData = conversationsRes.success ? (conversationsRes.data || []) : [];
-      
-      console.log('✅ Processed children data:', childrenData);
-      console.log('✅ Processed conversations data:', conversationsData);
-
-      // Check if we have valid data
-      if (!childrenRes.success) {
-        console.error('❌ Failed to fetch children:', childrenRes);
-        toast.error('Failed to load children data');
-      }
-      
-      if (!conversationsRes.success) {
-        console.error('❌ Failed to fetch conversations:', conversationsRes);
-        toast.error('Failed to load messages');
-      }
-      
-      // Extract teachers from children data
-      const teachersSet = new Set();
-      if (Array.isArray(childrenData) && childrenData.length > 0) {
-        childrenData.forEach(child => {
-          if (child.teachers && Array.isArray(child.teachers)) {
-            child.teachers.forEach(teacher => {
-              if (teacher && teacher.id) {
-                teachersSet.add(JSON.stringify(teacher));
-              }
-            });
-          }
-        });
-      }
-      
-      const uniqueTeachers = Array.from(teachersSet).map(t => JSON.parse(t));
-      setTeachers(uniqueTeachers);
-
-      // Set selected child to first child
-      if (childrenData.length > 0 && !selectedChild) {
-        setSelectedChild(childrenData[0]);
-      }
-
-      // Calculate real stats from children data
-      const totalChildren = childrenData.length;
-      
-      // Calculate average progress from recentProgress data
-      let totalAverageScore = 0;
-      let childrenWithData = 0;
-      
-      childrenData.forEach(child => {
-        if (child.recentProgress) {
-          totalAverageScore += child.recentProgress.averageScore || 0;
-          childrenWithData++;
-        }
-      });
-      
-      const averageProgress = childrenWithData > 0 
-        ? Math.round(totalAverageScore / childrenWithData)
-        : 0;
-      
-      const totalMessages = conversationsData.length;
-      const upcomingAssignments = childrenData.reduce((sum, child) => {
-        const submissions = child.submissions || [];
-        return sum + submissions.filter(sub => 
-          sub.assignment && 
-          new Date(sub.assignment.dueDate) > new Date() &&
-          sub.status !== 'submitted' && 
-          sub.status !== 'graded'
-        ).length;
-      }, 0);
-
-      setDashboardData({
-        stats: {
-          totalChildren,
-          averageProgress,
-          totalMessages,
-          upcomingAssignments
-        },
-        children: Array.isArray(childrenData) ? childrenData.map(child => ({
-          id: child.id || Math.random().toString(36).substr(2, 9),
-          name: child.name || `${child.firstName || ''} ${child.lastName || ''}`.trim() || 'Student',
-          firstName: child.firstName || '',
-          lastName: child.lastName || '',
-          age: child.age || 'N/A',
-          grade: child.grade || 'N/A',
-          profilePicture: child.profilePicture || null,
-          relationship: child.relationship || 'child',
-          recentProgress: child.recentProgress || {
-            lessonsCompleted: 0,
-            averageScore: 0,
-            timeSpent: '0 hours',
-            streak: 0
-          },
-          recentActivities: child.recentActivities || [],
-          upcomingAssignments: child.upcomingAssignments || []
-        })) : [],
-        messages: Array.isArray(conversationsData) ? conversationsData.slice(0, 5).map(conv => ({
-          id: conv.partnerId,
-          sender: conv.partner?.firstName + ' ' + conv.partner?.lastName || 'Teacher',
-          subject: 'Conversation',
-          preview: (conv.lastMessage?.content || '').substring(0, 100) + ((conv.lastMessage?.content || '').length > 100 ? '...' : ''),
-          timestamp: conv.lastMessage?.createdAt,
-          isRead: true
-        })) : []
-      });
-
-    } catch (error) {
-      console.error('💥 Failed to fetch dashboard data:', error);
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
+  const sendMessage = () => {
+    if (!newMessage.receiverId || !newMessage.subject || !newMessage.content) {
+      toast.error('Please fill in all fields');
+      return;
     }
-  }, [user, selectedChild]);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
-
-  const sendMessage = async () => {
-    try {
-      if (!newMessage.receiverId || !newMessage.subject || !newMessage.content) {
-        toast.error('Please fill in all fields');
-        return;
-      }
-
-      const messageData = {
-        ...newMessage,
-        messageType: 'general',
-        priority: 'medium',
-        relatedStudentId: selectedChild?.id
-      };
-
-      const response = await api.sendMessage(messageData);
-      if (response.success) {
-        setShowMessageModal(false);
-        setNewMessage({ subject: '', content: '', receiverId: '' });
-        toast.success('Message sent successfully!');
-        fetchDashboardData();
-      } else {
-        toast.error('Failed to send message');
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      toast.error('Failed to send message');
-    }
+    toast.success('Message sent successfully! (Static mode)');
+    setShowMessageModal(false);
+    setNewMessage({ subject: '', content: '', receiverId: '' });
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50">
-        <DashboardNavbar role="parent" currentPage="Dashboard" />
-        <div className="max-w-7xl mx-auto p-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50">
