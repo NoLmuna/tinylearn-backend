@@ -101,15 +101,47 @@ export default function StudentDashboard() {
         lessonsList = Array.isArray(rawLessons) ? rawLessons : (rawLessons.lessons || []);
       }
 
-      // Placeholder progress computation until student progress API is hooked up
-      const mockProgress = lessonsList.map((lesson, index) => ({
-        lessonId: lesson.id,
-        progress: Math.min(100, Math.round(((index + 1) / lessonsList.length) * 40)),
-        completed: false,
-        isCompleted: false
-      }));
+      // Fetch real progress data from backend
+      const progressResponse = await api.getProgress();
+      const progressData = progressResponse.success ? (progressResponse.data.progress || progressResponse.data || []) : [];
 
-      const completedLessons = mockProgress.filter(p => p.completed || p.isCompleted).length;
+      // Map progress to lessons
+      const progressMap = new Map();
+      progressData.forEach(p => {
+        progressMap.set(p.lessonId, p);
+      });
+
+      const lessonsWithProgress = lessonsList.map(lesson => {
+        const progress = progressMap.get(lesson.id);
+        return {
+          lessonId: lesson.id,
+          progress: progress ? (progress.score || 0) : 0,
+          completed: progress ? (progress.status === 'completed' || progress.completed) : false,
+          isCompleted: progress ? (progress.status === 'completed' || progress.isCompleted) : false
+        };
+      });
+
+      // Fetch assignments
+      let assignmentsList = [];
+      let pendingCount = 0;
+      try {
+        const assignmentsResponse = await api.getAssignments();
+        if (assignmentsResponse.success) {
+          const assignmentsData = assignmentsResponse.data.assignments || assignmentsResponse.data || [];
+          assignmentsList = Array.isArray(assignmentsData) ? assignmentsData : [];
+          
+          // Count pending assignments (not submitted or graded)
+          pendingCount = assignmentsList.filter(assignment => {
+            if (!assignment.submission) return true; // Not started
+            return assignment.submission.status !== 'submitted' && assignment.submission.status !== 'graded';
+          }).length;
+        }
+      } catch (assignmentError) {
+        console.error('Failed to fetch assignments:', assignmentError);
+        // Continue without assignments - not critical
+      }
+
+      const completedLessons = lessonsWithProgress.filter(p => p.completed || p.isCompleted).length;
       const totalLessons = lessonsList.length;
       const overallProgress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
@@ -117,13 +149,13 @@ export default function StudentDashboard() {
         stats: {
           completedLessons,
           totalLessons,
-          pendingAssignments: 0,
+          pendingAssignments: pendingCount,
           overallProgress,
           streak: 0
         },
         lessons: lessonsList.slice(0, 6),
-        assignments: [],
-        progress: mockProgress
+        assignments: assignmentsList.slice(0, 3),
+        progress: lessonsWithProgress
       });
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
@@ -250,7 +282,7 @@ export default function StudentDashboard() {
                   <BookOpenIcon className="h-6 w-6 text-blue-600" />
                   Continue Learning
                 </h2>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => navigate('/student/lessons')}>
                   View All Lessons
                 </Button>
               </div>
@@ -313,7 +345,7 @@ export default function StudentDashboard() {
                   <DocumentTextIcon className="h-6 w-6 text-purple-600" />
                   Recent Assignments
                 </h2>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => navigate('/student/assignments')}>
                   View All Assignments
                 </Button>
               </div>

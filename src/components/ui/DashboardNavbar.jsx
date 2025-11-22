@@ -15,7 +15,14 @@ const DashboardNavbar = ({ role, currentPage = 'Dashboard' }) => {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    // Navigate to role-specific login page
+    const loginPaths = {
+      student: '/student/login',
+      parent: '/parent/login',
+      teacher: '/login',
+      admin: '/admin/login'
+    };
+    navigate(loginPaths[user?.role] || '/login');
   };
 
   const handleNavigation = (item) => {
@@ -65,8 +72,7 @@ const DashboardNavbar = ({ role, currentPage = 'Dashboard' }) => {
         { name: 'Dashboard', path: '/student' },
         { name: 'Lessons', path: '/student/lessons' },
         { name: 'Assignments', path: '/student/assignments' },
-        { name: 'Progress', path: '/student/progress' },
-        { name: 'Profile', path: '/student/profile' }
+        { name: 'Progress', path: '/student/progress' }
       ]
     }
   };

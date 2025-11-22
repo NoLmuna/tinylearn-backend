@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
+import api from '../../../services/api';
 import { 
   HeartIcon, 
   ChartBarIcon,
@@ -22,86 +23,91 @@ import DashboardNavbar from '../../../components/ui/DashboardNavbar';
 const ParentDashboard = () => {
   const { user } = useAuth();
   
-  // Static mock data for dashboard
-  const dashboardData = {
-    stats: {
-      totalChildren: 2,
-      averageProgress: 85,
-      totalMessages: 5,
-      upcomingAssignments: 3
-    },
-    children: [
-      {
-        id: 'child-1',
-        firstName: 'Emma',
-        lastName: 'Johnson',
-        grade: '5th Grade',
-        recentProgress: {
-          completedLessons: 12,
-          totalLessons: 15,
-          averageScore: 92
-        },
-        upcomingAssignments: [
-          { id: 'assign-1', title: 'Math Homework - Chapter 5' },
-          { id: 'assign-2', title: 'Science Project - Solar System' }
-        ]
-      },
-      {
-        id: 'child-2',
-        firstName: 'Lucas',
-        lastName: 'Johnson',
-        grade: '3rd Grade',
-        recentProgress: {
-          completedLessons: 8,
-          totalLessons: 10,
-          averageScore: 78
-        },
-        upcomingAssignments: [
-          { id: 'assign-3', title: 'Reading Comprehension' }
-        ]
-      }
-    ],
-    messages: [
-      {
-        id: 'msg-1',
-        sender: 'Ms. Sarah Williams',
-        subject: 'Parent-Teacher Conference',
-        preview: 'I would like to schedule a meeting to discuss Emma\'s progress in mathematics...',
-        timestamp: '2024-01-15T10:30:00Z',
-        isRead: false
-      },
-      {
-        id: 'msg-2',
-        sender: 'Mr. David Chen',
-        subject: 'Science Fair Reminder',
-        preview: 'Just a reminder that the science fair project is due next Friday...',
-        timestamp: '2024-01-14T14:20:00Z',
-        isRead: true
-      },
-      {
-        id: 'msg-3',
-        sender: 'Ms. Sarah Williams',
-        subject: 'Weekly Update',
-        preview: 'Emma had a great week! She completed all her assignments on time...',
-        timestamp: '2024-01-13T09:15:00Z',
-        isRead: true
-      }
-    ]
-  };
-
-  const teachers = [
-    { id: 'teacher-1', firstName: 'Sarah', lastName: 'Williams' },
-    { id: 'teacher-2', firstName: 'David', lastName: 'Chen' },
-    { id: 'teacher-3', firstName: 'Maria', lastName: 'Garcia' }
-  ];
-
-  const [selectedChild, setSelectedChild] = useState(dashboardData.children[0]);
+  const [loading, setLoading] = useState(true);
+  const [children, setChildren] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [stats, setStats] = useState({
+    totalChildren: 0,
+    averageProgress: 0,
+    totalMessages: 0,
+    upcomingAssignments: 0
+  });
+  const [selectedChild, setSelectedChild] = useState(null);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [newMessage, setNewMessage] = useState({ 
     subject: '', 
     content: '', 
     receiverId: '' 
   });
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('🔍 Fetching parent dashboard data...');
+      
+      // Fetch all data in parallel
+      const [childrenRes, teachersRes] = await Promise.all([
+        api.getParentChildren().catch(err => ({ success: false, data: [] })),
+        api.getTeachers().catch(err => ({ success: false, data: [] }))
+      ]);
+
+      console.log('👨‍👩‍👧‍👦 Children response:', childrenRes);
+      console.log('👩‍🏫 Teachers response:', teachersRes);
+
+      // Process children data
+      const childrenData = childrenRes.success ? (childrenRes.data || []) : [];
+      setChildren(childrenData);
+      
+      if (childrenData.length > 0) {
+        setSelectedChild(childrenData[0]);
+      }
+
+      // Process teachers data
+      const teachersData = teachersRes.success ? (teachersRes.data || []) : [];
+      setTeachers(teachersData);
+
+      // TODO: Fetch messages from messaging API when available
+      setMessages([]);
+
+      // Calculate real stats
+      let totalUpcoming = 0;
+      let totalCompleted = 0;
+      let totalLessons = 0;
+
+      childrenData.forEach(child => {
+        if (child.recentProgress) {
+          totalCompleted += child.recentProgress.completedLessons || 0;
+          totalLessons += child.recentProgress.totalLessons || 0;
+        }
+        if (child.upcomingAssignments) {
+          totalUpcoming += child.upcomingAssignments.length;
+        }
+      });
+
+      const avgProgress = totalLessons > 0 
+        ? Math.round((totalCompleted / totalLessons) * 100) 
+        : 0;
+
+      setStats({
+        totalChildren: childrenData.length,
+        averageProgress: avgProgress,
+        totalMessages: 0, // Will be updated when messaging API is integrated
+        upcomingAssignments: totalUpcoming
+      });
+
+      console.log('✅ Dashboard data loaded successfully');
+    } catch (error) {
+      console.error('💥 Failed to fetch dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const sendMessage = () => {
     if (!newMessage.receiverId || !newMessage.subject || !newMessage.content) {
@@ -132,7 +138,7 @@ const ParentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-sm">Children</p>
-                <p className="text-3xl font-bold">{dashboardData.stats.totalChildren}</p>
+                <p className="text-3xl font-bold">{stats.totalChildren}</p>
               </div>
               <HeartIcon className="h-8 w-8 text-purple-200" />
             </div>
@@ -142,7 +148,7 @@ const ParentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-indigo-100 text-sm">Average Progress</p>
-                <p className="text-3xl font-bold">{dashboardData.stats.averageProgress}%</p>
+                <p className="text-3xl font-bold">{stats.averageProgress}%</p>
               </div>
               <ChartBarIcon className="h-8 w-8 text-indigo-200" />
             </div>
@@ -152,7 +158,7 @@ const ParentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-pink-100 text-sm">Messages</p>
-                <p className="text-3xl font-bold">{dashboardData.stats.totalMessages}</p>
+                <p className="text-3xl font-bold">{stats.totalMessages}</p>
               </div>
               <ChatBubbleLeftRightIcon className="h-8 w-8 text-pink-200" />
             </div>
@@ -162,7 +168,7 @@ const ParentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm">Upcoming</p>
-                <p className="text-3xl font-bold">{dashboardData.stats.upcomingAssignments}</p>
+                <p className="text-3xl font-bold">{stats.upcomingAssignments}</p>
               </div>
               <ClockIcon className="h-8 w-8 text-green-200" />
             </div>
@@ -185,7 +191,12 @@ const ParentDashboard = () => {
                 </Button>
               </div>
               
-              {dashboardData.children.length === 0 ? (
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+                  <p className="text-gray-600 mt-4">Loading children data...</p>
+                </div>
+              ) : children.length === 0 ? (
                 <div className="text-center py-12">
                   <UserGroupIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">No Children Found</h3>
@@ -193,7 +204,7 @@ const ParentDashboard = () => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {dashboardData.children.map((child) => (
+                  {children.map((child) => (
                     <div 
                       key={child.id} 
                       className={`p-4 rounded-lg border-2 transition-all cursor-pointer ${
@@ -274,14 +285,14 @@ const ParentDashboard = () => {
                 </Button>
               </div>
               
-              {dashboardData.messages.length === 0 ? (
+              {messages.length === 0 ? (
                 <div className="text-center py-6">
                   <ChatBubbleLeftRightIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-gray-500 text-sm">No messages yet</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {dashboardData.messages.map((message) => (
+                  {messages.map((message) => (
                     <div key={message.id} className="p-3 bg-gray-50 rounded-lg">
                       <div className="flex justify-between items-start mb-1">
                         <p className="font-medium text-sm text-gray-800">{message.sender}</p>

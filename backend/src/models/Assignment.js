@@ -48,7 +48,17 @@ module.exports = (sequelize) => {
             field: 'assigned_to',
             get() {
                 const rawValue = this.getDataValue('assignedTo');
-                return rawValue ? JSON.parse(rawValue) : [];
+                if (!rawValue) return [];
+                if (Array.isArray(rawValue)) return rawValue;
+                if (typeof rawValue === 'string') {
+                    try {
+                        return JSON.parse(rawValue);
+                    } catch (e) {
+                        console.error('Failed to parse assignedTo:', rawValue);
+                        return [];
+                    }
+                }
+                return [];
             },
             set(value) {
                 this.setDataValue('assignedTo', JSON.stringify(value));

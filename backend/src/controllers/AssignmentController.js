@@ -302,45 +302,38 @@ const getStudentAssignments = async (req, res) => {
         // Empty assignedTo array means "all students assigned to teacher"
         const { Op } = require('sequelize');
         
+        console.log('🔍 Fetching assignments for student:', studentId);
+        
         // First, get the teacher IDs this student is assigned to
         const teacherAssignments = await TeacherStudent.findAll({
             where: { studentId },
             attributes: ['teacherId']
         });
         const teacherIds = teacherAssignments.map(ta => ta.teacherId);
+        
+        console.log('👩‍🏫 Student teachers:', teacherIds);
 
-        // Build query: assignment is for this student if:
-        // 1. assignedTo contains the studentId, OR
-        // 2. assignedTo is empty AND the assignment's teacherId is in the student's teacher list
-        const assignments = await Assignment.findAndCountAll({
+        // If student has no teachers, return empty result
+        if (teacherIds.length === 0) {
+            console.log('⚠️ Student has no assigned teachers');
+            return sendResponse(res, 200, 'success', 'No assignments found', {
+                assignments: [],
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: 0,
+                    pages: 0
+                }
+            });
+        }
+
+        console.log('📋 Fetching assignments from teachers...');
+        
+        // Fetch all active assignments from student's teachers
+        const assignments = await Assignment.findAll({
             where: {
-                [Op.and]: [
-                    { isActive: true },
-                    {
-                        [Op.or]: [
-                            // Assignment specifically assigned to this student
-                            Assignment.sequelize.where(
-                                Assignment.sequelize.fn('JSON_CONTAINS', 
-                                    Assignment.sequelize.col('assigned_to'), 
-                                    JSON.stringify(studentId)
-                                ), 
-                                true
-                            ),
-                            // Assignment assigned to all students (empty array) AND teacher matches
-                            {
-                                [Op.and]: [
-                                    Assignment.sequelize.where(
-                                        Assignment.sequelize.fn('JSON_LENGTH',
-                                            Assignment.sequelize.col('assigned_to')
-                                        ),
-                                        0
-                                    ),
-                                    { teacherId: { [Op.in]: teacherIds } }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                teacherId: { [Op.in]: teacherIds },
+                isActive: true
             },
             include: [
                 { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
@@ -358,18 +351,69 @@ const getStudentAssignments = async (req, res) => {
                     required: false
                 }
             ],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: buildOrderClause(sortBy, sortOrder),
-            distinct: true
+            order: buildOrderClause(sortBy, sortOrder)
         });
+        
+        console.log(`✅ Found ${assignments.length} total assignments from teachers`);
+        
+        // Debug: Log raw data for first assignment
+        if (assignments.length > 0) {
+            console.log('🔍 First assignment raw data:', {
+                id: assignments[0].id,
+                assignedTo: assignments[0].assignedTo,
+                assignedToType: typeof assignments[0].assignedTo,
+                dataValues: assignments[0].dataValues.assignedTo,
+                dataValuesType: typeof assignments[0].dataValues.assignedTo
+            });
+        }
+
+        // Filter assignments - include if:
+        // 1. assignedTo array is empty (all students), OR
+        // 2. assignedTo array includes this studentId
+        let filteredByStudent = assignments.filter(assignment => {
+            // Get assignedTo - it might be a string that needs parsing
+            let assignedTo = assignment.assignedTo;
+            
+            // If it's a string, parse it
+            if (typeof assignedTo === 'string') {
+                try {
+                    assignedTo = JSON.parse(assignedTo);
+                } catch (err) {
+                    console.error(`Failed to parse assignedTo for assignment ${assignment.id}:`, assignedTo, err.message);
+                    assignedTo = [];
+                }
+            }
+            
+            // Ensure it's an array
+            if (!Array.isArray(assignedTo)) {
+                assignedTo = [];
+            }
+            
+            console.log(`Assignment ${assignment.id}: assignedTo =`, assignedTo, `(type: ${typeof assignment.assignedTo})`);
+            
+            // Empty array means "all students"
+            if (assignedTo.length === 0) {
+                console.log(`  ✓ Assignment ${assignment.id} is for all students`);
+                return true;
+            }
+            
+            // Check if student is in the assignedTo array
+            const isAssigned = assignedTo.includes(studentId);
+            console.log(`  ${isAssigned ? '✓' : '✗'} Assignment ${assignment.id} student ${studentId} in array:`, isAssigned);
+            return isAssigned;
+        });
+        
+        console.log(`📝 Filtered to ${filteredByStudent.length} assignments for this student`);
 
         // Filter by assignment type
         if (assignmentType) {
-            assignments.rows = assignments.rows.filter(a => a.assignmentType === assignmentType);
+            filteredByStudent = filteredByStudent.filter(a => a.assignmentType === assignmentType);
         }
 
-        const assignmentsWithSubmission = assignments.rows.map(assignment => {
+        // Apply pagination manually
+        const paginatedAssignments = filteredByStudent.slice(offset, offset + parseInt(limit));
+
+        const assignmentsWithSubmission = paginatedAssignments.map(assignment => {
             const submission = assignment.submissions.length > 0 ? assignment.submissions[0] : null;
             const isOverdue = new Date(assignment.dueDate) < new Date() && (!submission || submission.status === 'draft');
             
@@ -419,18 +463,21 @@ const getStudentAssignments = async (req, res) => {
                 assignment.completionStatus === completionStatus
             );
         }
+        
+        console.log(`🎯 Returning ${filteredAssignments.length} assignments to student`);
 
         sendResponse(res, 200, 'success', 'Assignments retrieved successfully', {
             assignments: filteredAssignments,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: assignments.count,
-                pages: Math.ceil(assignments.count / limit)
+                total: filteredByStudent.length,
+                pages: Math.ceil(filteredByStudent.length / limit)
             }
         });
     } catch (error) {
-        console.error('Get student assignments error:', error);
+        console.error('❌ Get student assignments error:', error);
+        console.error('Error stack:', error.stack);
         sendResponse(res, 500, 'error', 'Failed to retrieve assignments', null);
     }
 };

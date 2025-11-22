@@ -14,7 +14,6 @@ import StudentDashboard from './pages/dashboards/Student/StudentDashboard';
 import StudentLessons from './pages/dashboards/Student/StudentLessons';
 import StudentAssignments from './pages/dashboards/Student/StudentAssignments';
 import StudentProgress from './pages/dashboards/Student/StudentProgress';
-import StudentProfile from './pages/dashboards/Student/StudentProfile';
 import StudentViewLesson from './pages/dashboards/Student/ViewLesson.jsx';
 import TeacherDashboard from './pages/dashboards/Teacher/TeacherDashboard.jsx';
 import CreateLesson from './pages/dashboards/Teacher/CreateLesson.jsx';
@@ -107,7 +106,6 @@ function App() {
                   <Route path="lessons/:lessonId" element={<StudentViewLesson />} />
                   <Route path="assignments" element={<StudentAssignments />} />
                   <Route path="progress" element={<StudentProgress />} />
-                  <Route path="profile" element={<StudentProfile />} />
                 </Routes>
               </ProtectedRoute>
             } 

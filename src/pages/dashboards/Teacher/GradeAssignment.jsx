@@ -249,7 +249,7 @@ const GradeAssignment = () => {
       }
       
       // If we have assignment data, clear any errors
-      if (assignment || assignmentRes?.data) {
+      if (assignmentRes?.data) {
         setError(null);
       }
     } finally {
@@ -257,7 +257,8 @@ const GradeAssignment = () => {
       setLoading(false);
       console.log('✅ Loading state cleared - component should render now');
     }
-  }, [assignmentId, assignment, searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentId, searchParams]);
 
   useEffect(() => {
     if (assignmentId) {
