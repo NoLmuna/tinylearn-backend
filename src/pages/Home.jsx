@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AcademicCapIcon, UserGroupIcon, BookOpenIcon, SparklesIcon, PuzzlePieceIcon, ChartBarIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import Hero from '../components/Hero';
 import Card from '../components/ui/Card';
+import homeImage from '../assets/home-based-learning-8968710_1280.png';
 
 const features = [
   {
@@ -70,7 +71,7 @@ export default function Home() {
       <Hero
         title="Where Little Minds Begin Big Journeys"
         subtitle="TinyLearn is an interactive learning platform connecting students, parents, and tutors with engaging educational experiences designed for young learners."
-        image="/src/assets/home-based-learning-8968710_1280.png"
+        image={homeImage}
         imageAlt="Home-based learning environment for young learners"
         buttons={heroButtons}
       />
