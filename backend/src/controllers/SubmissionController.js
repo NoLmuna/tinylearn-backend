@@ -137,16 +137,11 @@ const gradeSubmission = async (req, res) => {
             return sendResponse(res, 403, 'error', 'Only teachers can grade submissions');
         }
 
-<<<<<<< HEAD
-        const submission = await Submission.findById(id)
-            .populate('assignmentId');
-=======
         // Validate score
         if (score === undefined || score === null) {
             console.log('[GradeSubmission] ❌ Score is missing');
             return sendResponse(res, 400, 'error', 'Score is required');
         }
->>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
         const scoreValue = parseFloat(score);
         if (isNaN(scoreValue) || scoreValue < 0) {
@@ -173,31 +168,6 @@ const gradeSubmission = async (req, res) => {
             return sendResponse(res, 404, 'error', 'Submission not found');
         }
 
-<<<<<<< HEAD
-        // Check if teacher is the one who created the assignment
-        if (submission.assignmentId.teacherId.toString() !== graderId.toString()) {
-            return sendResponse(res, 403, 'error', 'You can only grade submissions for your assignments');
-        }
-
-        if (score > submission.assignmentId.maxPoints) {
-            return sendResponse(res, 400, 'error', `Score cannot exceed maximum points (${submission.assignmentId.maxPoints})`);
-        }
-
-        submission.score = score;
-        submission.feedback = feedback;
-        submission.comments = comments;
-        submission.status = 'graded';
-        submission.gradedAt = new Date();
-        submission.gradedBy = graderId;
-        await submission.save();
-
-        const gradedSubmission = await Submission.findById(submission._id)
-            .populate('assignmentId', 'title maxPoints')
-            .populate('studentId', 'firstName lastName')
-            .populate('gradedBy', 'firstName lastName');
-
-        sendResponse(res, 200, 'success', 'Submission graded successfully', gradedSubmission);
-=======
         const assignment = submissionToUpdate.assignment;
         if (!assignment) {
             console.log('[GradeSubmission] ❌ Assignment not found');
@@ -262,7 +232,6 @@ const gradeSubmission = async (req, res) => {
         
         return sendResponse(res, 200, 'success', 'Submission graded successfully', responseData);
         
->>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
     } catch (error) {
         console.error('[GradeSubmission] 💥 ERROR:', error.message);
         console.error('[GradeSubmission] Stack:', error.stack);
@@ -306,14 +275,9 @@ const getTeacherSubmissions = async (req, res) => {
             return sendResponse(res, 403, 'error', 'Only teachers can view submissions');
         }
 
-<<<<<<< HEAD
-        const skip = (page - 1) * limit;
-        const query = {};
-=======
         const offset = (page - 1) * limit;
         const { Op } = require('sequelize');
         const whereClause = {};
->>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
         // Filter by status
         if (status !== 'all') {
@@ -345,24 +309,6 @@ const getTeacherSubmissions = async (req, res) => {
         orderClause = [[sortField, order]];
 
         // Get submissions for assignments created by this teacher
-<<<<<<< HEAD
-        const [submissions, total] = await Promise.all([
-            Submission.find(query)
-                .populate({
-                    path: 'assignmentId',
-                    match: { teacherId },
-                    select: 'title dueDate maxPoints'
-                })
-                .populate('studentId', 'firstName lastName')
-                .sort({ submittedAt: -1 })
-                .skip(skip)
-                .limit(parseInt(limit)),
-            Submission.countDocuments(query)
-        ]);
-
-        // Filter out submissions where assignment doesn't match teacherId
-        const filteredSubmissions = submissions.filter(s => s.assignmentId && s.assignmentId.teacherId.toString() === teacherId.toString());
-=======
         const submissions = await Submission.findAndCountAll({
             where: whereClause,
             include: [
@@ -400,7 +346,6 @@ const getTeacherSubmissions = async (req, res) => {
             }
             return submissionData;
         });
->>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
         sendResponse(res, 200, 'success', 'Submissions retrieved successfully', {
             submissions: enhancedSubmissions,
