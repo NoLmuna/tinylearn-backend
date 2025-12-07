@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Student, TeacherStudent, Teacher } = require('../models/database');
+const { Student, TeacherStudent, Teacher } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -15,7 +15,7 @@ const StudentController = {
                 return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
             }
 
-            const existingStudent = await Student.findOne({ where: { email } });
+            const existingStudent = await Student.findOne({ email });
             if (existingStudent) {
                 return send.sendResponseMessage(res, 409, null, 'Student with this email already exists');
             }
@@ -55,7 +55,7 @@ const StudentController = {
                 return send.sendResponseMessage(res, 400, null, 'Email and password are required');
             }
 
-            const student = await Student.findOne({ where: { email } });
+            const student = await Student.findOne({ email });
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
             }
@@ -69,7 +69,8 @@ const StudentController = {
                 return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
             }
 
-            await student.update({ lastLogin: new Date() });
+            student.lastLogin = new Date();
+            await student.save();
 
             const token = jwt.sign(
                 {
@@ -98,10 +99,7 @@ const StudentController = {
 
     getStudents: async (req, res) => {
         try {
-            const students = await Student.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const students = await Student.find().select('-password').sort({ createdAt: -1 });
 
             return send.sendResponseMessage(res, 200, students, 'Students retrieved successfully');
         } catch (error) {
@@ -114,13 +112,11 @@ const StudentController = {
         try {
             const { studentId } = req.params;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id) !== parseInt(studentId, 10)) {
+            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== studentId.toString()) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            const student = await Student.findByPk(studentId, {
-                attributes: { exclude: ['password'] }
-            });
+            const student = await Student.findById(studentId).select('-password');
 
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
@@ -138,23 +134,22 @@ const StudentController = {
             const { studentId } = req.params;
             const { firstName, lastName, grade, age, accountStatus, isActive } = req.body;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id) !== parseInt(studentId, 10)) {
+            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== studentId.toString()) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            const student = await Student.findByPk(studentId);
+            const student = await Student.findById(studentId);
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
             }
 
-            await student.update({
-                firstName: firstName ?? student.firstName,
-                lastName: lastName ?? student.lastName,
-                grade: grade ?? student.grade,
-                age: age ?? student.age,
-                accountStatus: accountStatus ?? student.accountStatus,
-                isActive: isActive !== undefined ? isActive : student.isActive
-            });
+            if (firstName !== undefined) student.firstName = firstName;
+            if (lastName !== undefined) student.lastName = lastName;
+            if (grade !== undefined) student.grade = grade;
+            if (age !== undefined) student.age = age;
+            if (accountStatus !== undefined) student.accountStatus = accountStatus;
+            if (isActive !== undefined) student.isActive = isActive;
+            await student.save();
 
             return send.sendResponseMessage(res, 200, student, 'Student updated successfully');
         } catch (error) {
@@ -167,12 +162,12 @@ const StudentController = {
         try {
             const { studentId } = req.params;
 
-            const student = await Student.findByPk(studentId);
+            const student = await Student.findById(studentId);
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
             }
 
-            await student.destroy();
+            await Student.findByIdAndDelete(studentId);
             return send.sendResponseMessage(res, 200, null, 'Student deleted successfully');
         } catch (error) {
             console.error('Delete student error:', error);
@@ -182,15 +177,13 @@ const StudentController = {
 
     getProfile: async (req, res) => {
         try {
-            const student = await Student.findByPk(req.user.userId, {
-                attributes: { exclude: ['password'] }
-            });
+            const student = await Student.findById(req.user.userId).select('-password');
 
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
             }
 
-            const profile = student.toJSON ? student.toJSON() : student;
+            const profile = student.toObject ? student.toObject() : student;
             profile.role = 'student';
 
             return send.sendResponseMessage(res, 200, profile, 'Student profile retrieved successfully');
@@ -214,25 +207,19 @@ const StudentController = {
                 return send.sendResponseMessage(res, 400, null, 'Teacher ID is required');
             }
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            const assignments = await TeacherStudent.findAll({
-                where: { teacherId },
-                include: [{
-                    model: Student,
-                    as: 'student',
-                    attributes: { exclude: ['password'] }
-                }]
-            });
+            const assignments = await TeacherStudent.find({ teacherId })
+                .populate('studentId', '-password');
 
             const students = assignments
-                .map((assignment) => assignment.student)
+                .map((assignment) => assignment.studentId)
                 .filter(Boolean)
                 .map((student) => ({
-                    ...student.toJSON(),
+                    ...(student.toObject ? student.toObject() : student),
                     role: 'student'
                 }));
 

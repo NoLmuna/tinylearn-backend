@@ -1,5 +1,5 @@
 /* eslint-disable no-undef */
-const { Lesson, Progress, Teacher, Assignment } = require('../models/database');
+const { Lesson, Progress, Teacher, Assignment } = require('../models');
 const send = require('../utils/response');
 
 const LessonController = {
@@ -8,40 +8,33 @@ const LessonController = {
         try {
             const { category, difficulty, ageGroup, page = 1, limit = 10 } = req.query;
             
-            let whereClause = { isActive: true };
+            let query = { isActive: true };
             
-            if (category) whereClause.category = category;
-            if (difficulty) whereClause.difficulty = difficulty;
-            if (ageGroup) whereClause.ageGroup = ageGroup;
+            if (category) query.category = category;
+            if (difficulty) query.difficulty = difficulty;
+            if (ageGroup) query.ageGroup = ageGroup;
 
-            const offset = (page - 1) * limit;
+            const skip = (page - 1) * limit;
 
-            const lessons = await Lesson.findAndCountAll({
-                where: whereClause,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                order: [['createdAt', 'DESC']],
-                include: [
-                    {
-                        model: Teacher,
-                        as: 'teacher',
-                        attributes: ['id', 'firstName', 'lastName', 'email']
-                    },
-                    {
-                        model: Assignment,
-                        as: 'assignments',
-                        attributes: { exclude: ['createdAt', 'updatedAt'] },
-                        required: false
-                    }
-                ]
-            });
+            const [lessons, total] = await Promise.all([
+                Lesson.find(query)
+                    .populate('teacherId', 'firstName lastName email')
+                    .populate({
+                        path: 'assignments',
+                        select: '-createdAt -updatedAt'
+                    })
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(parseInt(limit)),
+                Lesson.countDocuments(query)
+            ]);
 
             return send.sendResponseMessage(res, 200, {
-                lessons: lessons.rows,
+                lessons,
                 pagination: {
                     currentPage: parseInt(page),
-                    totalPages: Math.ceil(lessons.count / limit),
-                    totalItems: lessons.count,
+                    totalPages: Math.ceil(total / limit),
+                    totalItems: total,
                     itemsPerPage: parseInt(limit)
                 }
             }, 'Lessons retrieved successfully');
@@ -56,21 +49,12 @@ const LessonController = {
         try {
             const { id } = req.params;
 
-            const lesson = await Lesson.findByPk(id, {
-                include: [
-                    {
-                        model: Teacher,
-                        as: 'teacher',
-                        attributes: ['id', 'firstName', 'lastName', 'email']
-                    },
-                    {
-                        model: Assignment,
-                        as: 'assignments',
-                        attributes: { exclude: ['password'] },
-                        required: false
-                    }
-                ]
-            });
+            const lesson = await Lesson.findById(id)
+                .populate('teacherId', 'firstName lastName email')
+                .populate({
+                    path: 'assignments',
+                    select: '-password'
+                });
 
             if (!lesson) {
                 return send.sendResponseMessage(res, 404, null, 'Lesson not found');
@@ -115,7 +99,7 @@ const LessonController = {
                 return send.sendResponseMessage(res, 400, null, 'Teacher ID is required to create a lesson');
             }
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
@@ -130,15 +114,15 @@ const LessonController = {
                 duration,
                 imageUrl,
                 videoUrl,
-                isPublished: isPublished !== undefined ? isPublished : false,
+                isActive: isPublished !== undefined ? isPublished : true,
                 teacherId
             });
 
             return send.sendResponseMessage(res, 201, newLesson, 'Lesson created successfully');
         } catch (error) {
             console.error('Create lesson error:', error);
-            if (error.name === 'SequelizeValidationError') {
-                const validationErrors = error.errors.map(err => err.message);
+            if (error.name === 'ValidationError') {
+                const validationErrors = Object.values(error.errors).map(err => err.message);
                 return send.sendResponseMessage(res, 400, null, `Validation error: ${validationErrors.join(', ')}`);
             }
             return send.sendErrorMessage(res, 500, error);
@@ -151,13 +135,13 @@ const LessonController = {
             const { id } = req.params;
             const userId = req.user.userId || req.user.id;
 
-            const lesson = await Lesson.findByPk(id);
+            const lesson = await Lesson.findById(id);
             if (!lesson) {
                 return send.sendResponseMessage(res, 404, null, 'Lesson not found');
             }
 
             // Check if user can update (creator, admin, or teacher)
-            if (lesson.teacherId !== userId && req.user.role !== 'admin') {
+            if (lesson.teacherId.toString() !== userId.toString() && req.user.role !== 'admin') {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
@@ -174,24 +158,23 @@ const LessonController = {
                 isActive
             } = req.body;
 
-            await lesson.update({
-                title: title || lesson.title,
-                description: description || lesson.description,
-                content: content || lesson.content,
-                category: category || lesson.category,
-                difficulty: difficulty || lesson.difficulty,
-                ageGroup: ageGroup || lesson.ageGroup,
-                duration: duration || lesson.duration,
-                imageUrl: imageUrl || lesson.imageUrl,
-                videoUrl: videoUrl || lesson.videoUrl,
-                isActive: isActive !== undefined ? isActive : lesson.isActive
-            });
+            if (title !== undefined) lesson.title = title;
+            if (description !== undefined) lesson.description = description;
+            if (content !== undefined) lesson.content = content;
+            if (category !== undefined) lesson.category = category;
+            if (difficulty !== undefined) lesson.difficulty = difficulty;
+            if (ageGroup !== undefined) lesson.ageGroup = ageGroup;
+            if (duration !== undefined) lesson.duration = duration;
+            if (imageUrl !== undefined) lesson.imageUrl = imageUrl;
+            if (videoUrl !== undefined) lesson.videoUrl = videoUrl;
+            if (isActive !== undefined) lesson.isActive = isActive;
+            await lesson.save();
 
             return send.sendResponseMessage(res, 200, lesson, 'Lesson updated successfully');
         } catch (error) {
             console.error('Update lesson error:', error);
-            if (error.name === 'SequelizeValidationError') {
-                const validationErrors = error.errors.map(err => err.message);
+            if (error.name === 'ValidationError') {
+                const validationErrors = Object.values(error.errors).map(err => err.message);
                 return send.sendResponseMessage(res, 400, null, `Validation error: ${validationErrors.join(', ')}`);
             }
             return send.sendErrorMessage(res, 500, error);
@@ -204,17 +187,17 @@ const LessonController = {
             const { id } = req.params;
             const userId = req.user.userId || req.user.id;
 
-            const lesson = await Lesson.findByPk(id);
+            const lesson = await Lesson.findById(id);
             if (!lesson) {
                 return send.sendResponseMessage(res, 404, null, 'Lesson not found');
             }
 
             // Check if user can delete (creator or admin)
-            if (lesson.teacherId !== userId && req.user.role !== 'admin') {
+            if (lesson.teacherId.toString() !== userId.toString() && req.user.role !== 'admin') {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            await lesson.destroy();
+            await Lesson.findByIdAndDelete(id);
             return send.sendResponseMessage(res, 200, null, 'Lesson deleted successfully');
         } catch (error) {
             console.error('Delete lesson error:', error);
@@ -227,20 +210,12 @@ const LessonController = {
         try {
             const { category } = req.params;
             
-            const lessons = await Lesson.findAll({
-                where: { 
-                    category, 
-                    isActive: true 
-                },
-                order: [['createdAt', 'DESC']],
-                include: [
-                    {
-                        model: Teacher,
-                        as: 'teacher',
-                        attributes: ['id', 'firstName', 'lastName']
-                    }
-                ]
-            });
+            const lessons = await Lesson.find({ 
+                category, 
+                isActive: true 
+            })
+                .populate('teacherId', 'firstName lastName')
+                .sort({ createdAt: -1 });
 
             return send.sendResponseMessage(res, 200, lessons, `Lessons in ${category} category retrieved successfully`);
         } catch (error) {

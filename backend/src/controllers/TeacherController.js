@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Teacher, Student, TeacherStudent, Lesson, Assignment } = require('../models/database');
+const { Teacher, Student, TeacherStudent, Lesson, Assignment } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -15,7 +15,7 @@ const TeacherController = {
                 return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
             }
 
-            const existingTeacher = await Teacher.findOne({ where: { email } });
+            const existingTeacher = await Teacher.findOne({ email });
             if (existingTeacher) {
                 return send.sendResponseMessage(res, 409, null, 'Teacher with this email already exists');
             }
@@ -54,7 +54,7 @@ const TeacherController = {
                 return send.sendResponseMessage(res, 400, null, 'Email and password are required');
             }
 
-            const teacher = await Teacher.findOne({ where: { email } });
+            const teacher = await Teacher.findOne({ email });
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
@@ -72,7 +72,8 @@ const TeacherController = {
                 return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
             }
 
-            await teacher.update({ lastLogin: new Date() });
+            teacher.lastLogin = new Date();
+            await teacher.save();
 
             const token = jwt.sign(
                 {
@@ -104,16 +105,12 @@ const TeacherController = {
     getTeachers: async (req, res) => {
         try {
             const { status } = req.query;
-            const whereClause = {};
+            const query = {};
             if (status) {
-                whereClause.accountStatus = status;
+                query.accountStatus = status;
             }
 
-            const teachers = await Teacher.findAll({
-                where: whereClause,
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const teachers = await Teacher.find(query).select('-password').sort({ createdAt: -1 });
 
             return send.sendResponseMessage(res, 200, teachers, 'Teachers retrieved successfully');
         } catch (error) {
@@ -127,15 +124,14 @@ const TeacherController = {
             const { teacherId } = req.params;
             const { accountStatus, isActive } = req.body;
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            await teacher.update({
-                accountStatus: accountStatus ?? teacher.accountStatus,
-                isActive: isActive !== undefined ? isActive : teacher.isActive
-            });
+            if (accountStatus !== undefined) teacher.accountStatus = accountStatus;
+            if (isActive !== undefined) teacher.isActive = isActive;
+            await teacher.save();
 
             return send.sendResponseMessage(res, 200, teacher, 'Teacher updated successfully');
         } catch (error) {
@@ -149,21 +145,20 @@ const TeacherController = {
             const { teacherId } = req.params;
             const { firstName, lastName, bio, subjectSpecialty } = req.body;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id) !== parseInt(teacherId, 10)) {
+            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== teacherId.toString()) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            await teacher.update({
-                firstName: firstName ?? teacher.firstName,
-                lastName: lastName ?? teacher.lastName,
-                bio: bio ?? teacher.bio,
-                subjectSpecialty: subjectSpecialty ?? teacher.subjectSpecialty
-            });
+            if (firstName !== undefined) teacher.firstName = firstName;
+            if (lastName !== undefined) teacher.lastName = lastName;
+            if (bio !== undefined) teacher.bio = bio;
+            if (subjectSpecialty !== undefined) teacher.subjectSpecialty = subjectSpecialty;
+            await teacher.save();
 
             return send.sendResponseMessage(res, 200, teacher, 'Teacher profile updated successfully');
         } catch (error) {
@@ -176,12 +171,12 @@ const TeacherController = {
         try {
             const { teacherId } = req.params;
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            await teacher.destroy();
+            await Teacher.findByIdAndDelete(teacherId);
             return send.sendResponseMessage(res, 200, null, 'Teacher deleted successfully');
         } catch (error) {
             console.error('Delete teacher error:', error);
@@ -192,9 +187,7 @@ const TeacherController = {
     getTeacherById: async (req, res) => {
         try {
             const { teacherId } = req.params;
-            const teacher = await Teacher.findByPk(teacherId, {
-                attributes: { exclude: ['password'] }
-            });
+            const teacher = await Teacher.findById(teacherId).select('-password');
 
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
@@ -209,15 +202,13 @@ const TeacherController = {
 
     getProfile: async (req, res) => {
         try {
-            const teacher = await Teacher.findByPk(req.user.userId, {
-                attributes: { exclude: ['password'] }
-            });
+            const teacher = await Teacher.findById(req.user.userId).select('-password');
 
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            const profile = teacher.toJSON ? teacher.toJSON() : teacher;
+            const profile = teacher.toObject ? teacher.toObject() : teacher;
             profile.role = 'teacher';
 
             return send.sendResponseMessage(res, 200, profile, 'Teacher profile retrieved successfully');
@@ -241,20 +232,14 @@ const TeacherController = {
                 return send.sendResponseMessage(res, 400, null, 'Teacher id is required');
             }
 
-            const assignments = await TeacherStudent.findAll({
-                where: { teacherId },
-                include: [{
-                    model: Student,
-                    as: 'student',
-                    attributes: { exclude: ['password'] }
-                }]
-            });
+            const assignments = await TeacherStudent.find({ teacherId })
+                .populate('studentId', '-password');
 
             const students = assignments
-                .map((assignment) => assignment.student)
+                .map((assignment) => assignment.studentId)
                 .filter(Boolean)
                 .map((student) => ({
-                    ...student.toJSON(),
+                    ...(student.toObject ? student.toObject() : student),
                     role: 'student'
                 }));
 
@@ -280,41 +265,34 @@ const TeacherController = {
             }
 
             const { page = 1, limit = 10, status } = req.query;
-            const offset = (page - 1) * limit;
+            const skip = (page - 1) * limit;
 
-            let whereClause = { teacherId };
+            let query = { teacherId };
             if (status === 'published') {
-                whereClause.isPublished = true;
+                query.isPublished = true;
             } else if (status === 'draft') {
-                whereClause.isPublished = false;
+                query.isPublished = false;
             }
 
-            const lessons = await Lesson.findAndCountAll({
-                where: whereClause,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                order: [['createdAt', 'DESC']],
-                include: [
-                    {
-                        model: Teacher,
-                        as: 'teacher',
-                        attributes: ['id', 'firstName', 'lastName', 'email']
-                    },
-                    {
-                        model: Assignment,
-                        as: 'assignments',
-                        attributes: { exclude: ['createdAt', 'updatedAt'] },
-                        required: false
-                    }
-                ]
-            });
+            const [lessons, total] = await Promise.all([
+                Lesson.find(query)
+                    .populate('teacherId', 'firstName lastName email')
+                    .populate({
+                        path: 'assignments',
+                        select: '-createdAt -updatedAt'
+                    })
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(parseInt(limit)),
+                Lesson.countDocuments(query)
+            ]);
 
             return send.sendResponseMessage(res, 200, {
-                lessons: lessons.rows,
+                lessons,
                 pagination: {
                     currentPage: parseInt(page),
-                    totalPages: Math.ceil(lessons.count / limit),
-                    totalItems: lessons.count,
+                    totalPages: Math.ceil(total / limit),
+                    totalItems: total,
                     itemsPerPage: parseInt(limit)
                 }
             }, 'Teacher lessons retrieved successfully');

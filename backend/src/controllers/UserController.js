@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { User, StudentParent } = require('../models/database');
+const { Student, Parent, StudentParent } = require('../models');
 const send = require('../utils/response');
 
 const UserController = {

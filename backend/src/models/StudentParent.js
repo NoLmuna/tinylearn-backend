@@ -1,66 +1,41 @@
 /* eslint-disable no-undef */
-const { DataTypes } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize) => {
-    const StudentParent = sequelize.define('StudentParent', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-        },
-        studentId: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            field: 'student_id',
-            references: {
-                model: 'students',
-                key: 'id'
-            }
-        },
-        parentId: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            field: 'parent_id',
-            references: {
-                model: 'parents',
-                key: 'id'
-            }
-        },
-        relationship: {
-            type: DataTypes.ENUM('mother', 'father', 'guardian', 'grandmother', 'grandfather', 'other'),
-            defaultValue: 'guardian'
-        },
-        isPrimary: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false,
-            field: 'is_primary'
-        },
-        canReceiveMessages: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true,
-            field: 'can_receive_messages'
-        },
-        canViewProgress: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true,
-            field: 'can_view_progress'
-        }
-    }, {
-        tableName: 'student_parents',
-        timestamps: true,
-        indexes: [
-            {
-                unique: true,
-                fields: ['student_id', 'parent_id']
-            },
-            {
-                fields: ['student_id']
-            },
-            {
-                fields: ['parent_id']
-            }
-        ]
-    });
+const studentParentSchema = new mongoose.Schema({
+    studentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Student',
+    },
+    parentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Parent',
+    },
+    relationship: {
+        type: String,
+        enum: ['mother', 'father', 'guardian', 'grandmother', 'grandfather', 'other'],
+        default: 'guardian',
+    },
+    isPrimary: {
+        type: Boolean,
+        default: false,
+    },
+    canReceiveMessages: {
+        type: Boolean,
+        default: true,
+    },
+    canViewProgress: {
+        type: Boolean,
+        default: true,
+    }
+}, {
+    timestamps: true,
+    collection: 'student_parents'
+});
 
-    return StudentParent;
-};
+studentParentSchema.index({ studentId: 1, parentId: 1 }, { unique: true });
+studentParentSchema.index({ studentId: 1 });
+studentParentSchema.index({ parentId: 1 });
+
+module.exports = mongoose.model('StudentParent', studentParentSchema);

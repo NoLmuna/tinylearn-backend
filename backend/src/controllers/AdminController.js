@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Admin, Teacher, Student, Parent, TeacherStudent, sequelize } = require('../models/database');
+const { Admin, Teacher, Student, Parent, TeacherStudent } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -15,12 +15,12 @@ const AdminController = {
                 return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
             }
 
-            const adminCount = await Admin.count();
+            const adminCount = await Admin.countDocuments();
             if (adminCount > 0 && (!req.user || req.user.role !== 'admin')) {
                 return send.sendResponseMessage(res, 403, null, 'Only admins can create additional admin accounts');
             }
 
-            const existingAdmin = await Admin.findOne({ where: { email } });
+            const existingAdmin = await Admin.findOne({ email });
             if (existingAdmin) {
                 return send.sendResponseMessage(res, 409, null, 'Admin with this email already exists');
             }
@@ -60,7 +60,7 @@ const AdminController = {
                 return send.sendResponseMessage(res, 400, null, 'Email and password are required');
             }
 
-            const admin = await Admin.findOne({ where: { email } });
+            const admin = await Admin.findOne({ email });
             if (!admin) {
                 return send.sendResponseMessage(res, 404, null, 'Admin not found');
             }
@@ -74,7 +74,8 @@ const AdminController = {
                 return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
             }
 
-            await admin.update({ lastLogin: new Date() });
+            admin.lastLogin = new Date();
+            await admin.save();
 
             const token = jwt.sign(
                 {
@@ -105,10 +106,7 @@ const AdminController = {
 
     getAdmins: async (req, res) => {
         try {
-            const admins = await Admin.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const admins = await Admin.find().select('-password').sort({ createdAt: -1 });
 
             return send.sendResponseMessage(res, 200, admins, 'Admins retrieved successfully');
         } catch (error) {
@@ -119,13 +117,10 @@ const AdminController = {
 
     getTeachersList: async (req, res) => {
         try {
-            const teachers = await Teacher.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const teachers = await Teacher.find().select('-password').sort({ createdAt: -1 });
 
             const normalized = teachers.map(teacher => {
-                const record = teacher.toJSON ? teacher.toJSON() : teacher;
+                const record = teacher.toObject ? teacher.toObject() : teacher;
                 record.role = 'teacher';
                 return record;
             });
@@ -140,15 +135,13 @@ const AdminController = {
     getTeachersDetail: async (req, res) => {
         try {
             const { teacherId } = req.params;
-            const teacher = await Teacher.findByPk(teacherId, {
-                attributes: { exclude: ['password'] }
-            });
+            const teacher = await Teacher.findById(teacherId).select('-password');
 
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            const record = teacher.toJSON ? teacher.toJSON() : teacher;
+            const record = teacher.toObject ? teacher.toObject() : teacher;
             record.role = 'teacher';
 
             return send.sendResponseMessage(res, 200, record, 'Teacher retrieved successfully');
@@ -160,13 +153,10 @@ const AdminController = {
 
     getStudentsList: async (req, res) => {
         try {
-            const students = await Student.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const students = await Student.find().select('-password').sort({ createdAt: -1 });
 
             const normalized = students.map(student => {
-                const record = student.toJSON ? student.toJSON() : student;
+                const record = student.toObject ? student.toObject() : student;
                 record.role = 'student';
                 return record;
             });
@@ -181,15 +171,13 @@ const AdminController = {
     getStudentsDetail: async (req, res) => {
         try {
             const { studentId } = req.params;
-            const student = await Student.findByPk(studentId, {
-                attributes: { exclude: ['password'] }
-            });
+            const student = await Student.findById(studentId).select('-password');
 
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
             }
 
-            const record = student.toJSON ? student.toJSON() : student;
+            const record = student.toObject ? student.toObject() : student;
             record.role = 'student';
 
             return send.sendResponseMessage(res, 200, record, 'Student retrieved successfully');
@@ -201,13 +189,10 @@ const AdminController = {
 
     getParentsList: async (req, res) => {
         try {
-            const parents = await Parent.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const parents = await Parent.find().select('-password').sort({ createdAt: -1 });
 
             const normalized = parents.map(parent => {
-                const record = parent.toJSON ? parent.toJSON() : parent;
+                const record = parent.toObject ? parent.toObject() : parent;
                 record.role = 'parent';
                 return record;
             });
@@ -222,15 +207,13 @@ const AdminController = {
     getParentsDetail: async (req, res) => {
         try {
             const { parentId } = req.params;
-            const parent = await Parent.findByPk(parentId, {
-                attributes: { exclude: ['password'] }
-            });
+            const parent = await Parent.findById(parentId).select('-password');
 
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
             }
 
-            const record = parent.toJSON ? parent.toJSON() : parent;
+            const record = parent.toObject ? parent.toObject() : parent;
             record.role = 'parent';
 
             return send.sendResponseMessage(res, 200, record, 'Parent retrieved successfully');
@@ -243,9 +226,7 @@ const AdminController = {
     getAdminById: async (req, res) => {
         try {
             const { adminId } = req.params;
-            const admin = await Admin.findByPk(adminId, {
-                attributes: { exclude: ['password'] }
-            });
+            const admin = await Admin.findById(adminId).select('-password');
 
             if (!admin) {
                 return send.sendResponseMessage(res, 404, null, 'Admin not found');
@@ -260,15 +241,13 @@ const AdminController = {
 
     getProfile: async (req, res) => {
         try {
-            const admin = await Admin.findByPk(req.user.userId, {
-                attributes: { exclude: ['password'] }
-            });
+            const admin = await Admin.findById(req.user.userId).select('-password');
 
             if (!admin) {
                 return send.sendResponseMessage(res, 404, null, 'Admin not found');
             }
 
-            const profile = admin.toJSON ? admin.toJSON() : admin;
+            const profile = admin.toObject ? admin.toObject() : admin;
             profile.role = 'admin';
 
             return send.sendResponseMessage(res, 200, profile, 'Admin profile retrieved successfully');
@@ -283,18 +262,17 @@ const AdminController = {
             const { adminId } = req.params;
             const { firstName, lastName, email, accountStatus, isSuperAdmin } = req.body;
 
-            const admin = await Admin.findByPk(adminId);
+            const admin = await Admin.findById(adminId);
             if (!admin) {
                 return send.sendResponseMessage(res, 404, null, 'Admin not found');
             }
 
-            await admin.update({
-                firstName: firstName ?? admin.firstName,
-                lastName: lastName ?? admin.lastName,
-                email: email ?? admin.email,
-                accountStatus: accountStatus ?? admin.accountStatus,
-                isSuperAdmin: isSuperAdmin !== undefined ? isSuperAdmin : admin.isSuperAdmin
-            });
+            if (firstName !== undefined) admin.firstName = firstName;
+            if (lastName !== undefined) admin.lastName = lastName;
+            if (email !== undefined) admin.email = email;
+            if (accountStatus !== undefined) admin.accountStatus = accountStatus;
+            if (isSuperAdmin !== undefined) admin.isSuperAdmin = isSuperAdmin;
+            await admin.save();
 
             return send.sendResponseMessage(res, 200, admin, 'Admin updated successfully');
         } catch (error) {
@@ -307,16 +285,16 @@ const AdminController = {
         try {
             const { adminId } = req.params;
 
-            if (parseInt(adminId, 10) === (req.user.userId || req.user.id)) {
+            if (adminId.toString() === (req.user.userId || req.user.id).toString()) {
                 return send.sendResponseMessage(res, 400, null, 'You cannot delete your own account');
             }
 
-            const admin = await Admin.findByPk(adminId);
+            const admin = await Admin.findById(adminId);
             if (!admin) {
                 return send.sendResponseMessage(res, 404, null, 'Admin not found');
             }
 
-            await admin.destroy();
+            await Admin.findByIdAndDelete(adminId);
             return send.sendResponseMessage(res, 200, null, 'Admin deleted successfully');
         } catch (error) {
             console.error('Delete admin error:', error);
@@ -333,11 +311,11 @@ const AdminController = {
                 totalParents,
                 pendingTeachers
             ] = await Promise.all([
-                Admin.count(),
-                Teacher.count(),
-                Student.count(),
-                Parent.count(),
-                Teacher.count({ where: { accountStatus: 'pending' } })
+                Admin.countDocuments(),
+                Teacher.countDocuments(),
+                Student.countDocuments(),
+                Parent.countDocuments(),
+                Teacher.countDocuments({ accountStatus: 'pending' })
             ]);
 
             const stats = {
@@ -360,25 +338,19 @@ const AdminController = {
         try {
             const { teacherId } = req.params;
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId);
             if (!teacher) {
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
-            const assignments = await TeacherStudent.findAll({
-                where: { teacherId },
-                include: [{
-                    model: Student,
-                    as: 'student',
-                    attributes: { exclude: ['password'] }
-                }]
-            });
+            const assignments = await TeacherStudent.find({ teacherId })
+                .populate('studentId', '-password');
 
             const students = assignments
-                .map((assignment) => assignment.student)
+                .map((assignment) => assignment.studentId)
                 .filter(Boolean)
                 .map(student => ({
-                    ...student.toJSON(),
+                    ...(student.toObject ? student.toObject() : student),
                     role: 'student'
                 }));
 
@@ -390,80 +362,76 @@ const AdminController = {
     },
 
     assignStudentsToTeacher: async (req, res) => {
-        const transaction = await sequelize.transaction();
+        const session = await TeacherStudent.db.startSession();
         try {
+            session.startTransaction();
             const { teacherId } = req.params;
             const { studentIds } = req.body;
 
             if (!Array.isArray(studentIds)) {
-                await transaction.rollback();
+                await session.abortTransaction();
                 return send.sendResponseMessage(res, 400, null, 'studentIds array is required');
             }
 
-            const teacher = await Teacher.findByPk(teacherId);
+            const teacher = await Teacher.findById(teacherId).session(session);
             if (!teacher) {
-                await transaction.rollback();
+                await session.abortTransaction();
                 return send.sendResponseMessage(res, 404, null, 'Teacher not found');
             }
 
             if (studentIds.length > 0) {
-                const students = await Student.findAll({
-                    where: { id: studentIds }
-                });
+                const students = await Student.find({
+                    _id: { $in: studentIds }
+                }).session(session);
 
                 if (students.length !== studentIds.length) {
-                    await transaction.rollback();
+                    await session.abortTransaction();
                     return send.sendResponseMessage(res, 400, null, 'One or more student IDs are invalid');
                 }
             }
 
-            const existingAssignments = await TeacherStudent.findAll({
-                where: { teacherId },
-                transaction
-            });
-            const existingIds = existingAssignments.map((assignment) => assignment.studentId);
+            const existingAssignments = await TeacherStudent.find({
+                teacherId
+            }).session(session);
+            const existingIds = existingAssignments.map((assignment) => assignment.studentId.toString());
 
-            const idsToAdd = studentIds.filter((id) => !existingIds.includes(id));
-            const idsToRemove = existingIds.filter((id) => !studentIds.includes(id));
+            const idsToAdd = studentIds.filter((id) => !existingIds.includes(id.toString()));
+            const idsToRemove = existingIds.filter((id) => !studentIds.map(s => s.toString()).includes(id));
 
             if (idsToRemove.length > 0) {
-                await TeacherStudent.destroy({
-                    where: { teacherId, studentId: idsToRemove },
-                    transaction
-                });
+                await TeacherStudent.deleteMany({
+                    teacherId,
+                    studentId: { $in: idsToRemove }
+                }).session(session);
             }
 
             if (idsToAdd.length > 0) {
-                await TeacherStudent.bulkCreate(
+                await TeacherStudent.insertMany(
                     idsToAdd.map((studentId) => ({ teacherId, studentId })),
-                    { transaction }
+                    { session }
                 );
             }
 
-            await transaction.commit();
+            await session.commitTransaction();
 
-            const updatedAssignments = await TeacherStudent.findAll({
-                where: { teacherId },
-                include: [{
-                    model: Student,
-                    as: 'student',
-                    attributes: { exclude: ['password'] }
-                }]
-            });
+            const updatedAssignments = await TeacherStudent.find({ teacherId })
+                .populate('studentId', '-password');
 
             const students = updatedAssignments
-                .map((assignment) => assignment.student)
+                .map((assignment) => assignment.studentId)
                 .filter(Boolean)
                 .map(student => ({
-                    ...student.toJSON(),
+                    ...(student.toObject ? student.toObject() : student),
                     role: 'student'
                 }));
 
             return send.sendResponseMessage(res, 200, students, 'Students assigned successfully');
         } catch (error) {
-            await transaction.rollback();
+            await session.abortTransaction();
             console.error('Assign teacher students error:', error);
             return send.sendErrorMessage(res, 500, error);
+        } finally {
+            session.endSession();
         }
     }
 };

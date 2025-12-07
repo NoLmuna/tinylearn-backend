@@ -25,7 +25,8 @@ const createAssignment = async (req, res) => {
         // If lessonId is provided, validate it belongs to the teacher
         if (lessonId) {
             const lesson = await Lesson.findOne({
-                where: { id: lessonId, teacherId }
+                _id: lessonId,
+                teacherId
             });
             if (!lesson) {
                 return sendResponse(res, 404, 'error', 'Lesson not found or does not belong to you');
@@ -45,12 +46,9 @@ const createAssignment = async (req, res) => {
             attachments: attachments || []
         });
 
-        const assignmentWithDetails = await Assignment.findByPk(assignment.id, {
-            include: [
-                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
-            ]
-        });
+        const assignmentWithDetails = await Assignment.findById(assignment._id)
+            .populate('teacherId', 'firstName lastName')
+            .populate('lessonId', 'title');
 
         sendResponse(res, 201, 'success', 'Assignment created successfully', assignmentWithDetails);
     } catch (error) {
@@ -75,25 +73,25 @@ const getAssignments = async (req, res) => {
         // For admin users, show all assignments
         if (req.user.role === 'admin') {
             const { page = 1, limit = 10 } = req.query;
-            const offset = (page - 1) * limit;
+            const skip = (page - 1) * limit;
 
-            const assignments = await Assignment.findAndCountAll({
-                include: [
-                    { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                    { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
-                ],
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                order: [['createdAt', 'DESC']]
-            });
+            const [assignments, total] = await Promise.all([
+                Assignment.find()
+                    .populate('teacherId', 'firstName lastName')
+                    .populate('lessonId', 'title')
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(parseInt(limit)),
+                Assignment.countDocuments()
+            ]);
 
             return sendResponse(res, 200, 'success', 'All assignments retrieved successfully', {
-                assignments: assignments.rows,
+                assignments,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),
-                    total: assignments.count,
-                    pages: Math.ceil(assignments.count / limit)
+                    total,
+                    pages: Math.ceil(total / limit)
                 }
             });
         }
@@ -111,52 +109,50 @@ const getTeacherAssignments = async (req, res) => {
         const teacherId = req.user.userId;
         const { page = 1, limit = 10, status = 'all' } = req.query;
 
-        const offset = (page - 1) * limit;
-        const whereClause = { teacherId };
+        const skip = (page - 1) * limit;
+        const query = { teacherId };
 
         if (status !== 'all') {
-            whereClause.isActive = status === 'active';
+            query.isActive = status === 'active';
         }
 
-        const assignments = await Assignment.findAndCountAll({
-            where: whereClause,
-            include: [
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
-                { 
-                    model: Submission, 
-                    as: 'submissions',
-                    include: [
-                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
-                    ]
-                }
-            ],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['createdAt', 'DESC']]
-        });
+        const [assignments, total] = await Promise.all([
+            Assignment.find(query)
+                .populate('lessonId', 'title')
+                .populate({
+                    path: 'submissions',
+                    populate: {
+                        path: 'studentId',
+                        select: 'firstName lastName'
+                    }
+                })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Assignment.countDocuments(query)
+        ]);
 
         // Get all students assigned to this teacher for "all students" assignments
-        const teacherStudents = await TeacherStudent.findAll({
-            where: { teacherId },
-            attributes: ['studentId']
-        });
+        const teacherStudents = await TeacherStudent.find({ teacherId })
+            .select('studentId');
         const allStudentIds = teacherStudents.map(ts => ts.studentId);
 
-        const assignmentsWithStats = assignments.rows.map(assignment => {
+        const assignmentsWithStats = assignments.map(assignment => {
             // If assignedTo is empty, it means "all students"
             const totalAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
                 ? assignment.assignedTo.length
                 : allStudentIds.length;
             
+            const submissions = assignment.submissions || [];
             const submissionStats = {
                 total: totalAssigned,
-                submitted: assignment.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
-                graded: assignment.submissions.filter(s => s.status === 'graded').length,
-                pending: assignment.submissions.filter(s => s.status === 'submitted').length
+                submitted: submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
+                graded: submissions.filter(s => s.status === 'graded').length,
+                pending: submissions.filter(s => s.status === 'submitted').length
             };
 
             return {
-                ...assignment.toJSON(),
+                ...(assignment.toObject ? assignment.toObject() : assignment),
                 submissionStats
             };
         });
@@ -166,8 +162,8 @@ const getTeacherAssignments = async (req, res) => {
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: assignments.count,
-                pages: Math.ceil(assignments.count / limit)
+                total,
+                pages: Math.ceil(total / limit)
             }
         });
     } catch (error) {
@@ -182,73 +178,56 @@ const getStudentAssignments = async (req, res) => {
         const studentId = req.user.userId;
         const { page = 1, limit = 10, status = 'all' } = req.query;
 
-        const offset = (page - 1) * limit;
+        const skip = (page - 1) * limit;
         
         // Find assignments where the student is assigned
         // Empty assignedTo array means "all students assigned to teacher"
-        const { Op } = require('sequelize');
         
         // First, get the teacher IDs this student is assigned to
-        const teacherAssignments = await TeacherStudent.findAll({
-            where: { studentId },
-            attributes: ['teacherId']
-        });
+        const teacherAssignments = await TeacherStudent.find({ studentId })
+            .select('teacherId');
         const teacherIds = teacherAssignments.map(ta => ta.teacherId);
 
         // Build query: assignment is for this student if:
         // 1. assignedTo contains the studentId, OR
         // 2. assignedTo is empty AND the assignment's teacherId is in the student's teacher list
-        const assignments = await Assignment.findAndCountAll({
-            where: {
-                [Op.and]: [
-                    { isActive: true },
-                    {
-                        [Op.or]: [
-                            // Assignment specifically assigned to this student
-                            Assignment.sequelize.where(
-                                Assignment.sequelize.fn('JSON_CONTAINS', 
-                                    Assignment.sequelize.col('assigned_to'), 
-                                    JSON.stringify(studentId)
-                                ), 
-                                true
-                            ),
-                            // Assignment assigned to all students (empty array) AND teacher matches
-                            {
-                                [Op.and]: [
-                                    Assignment.sequelize.where(
-                                        Assignment.sequelize.fn('JSON_LENGTH',
-                                            Assignment.sequelize.col('assigned_to')
-                                        ),
-                                        0
-                                    ),
-                                    { teacherId: { [Op.in]: teacherIds } }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            },
-            include: [
-                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
-                { 
-                    model: Submission, 
-                    as: 'submissions',
-                    where: { studentId },
-                    required: false
+        const query = {
+            isActive: true,
+            $or: [
+                // Assignment specifically assigned to this student
+                { assignedTo: studentId },
+                // Assignment assigned to all students (empty array) AND teacher matches
+                {
+                    $and: [
+                        { assignedTo: { $size: 0 } },
+                        { teacherId: { $in: teacherIds } }
+                    ]
                 }
-            ],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['dueDate', 'ASC']]
-        });
+            ]
+        };
 
-        const assignmentsWithSubmission = assignments.rows.map(assignment => {
-            const submission = assignment.submissions.length > 0 ? assignment.submissions[0] : null;
+        const [assignments, total] = await Promise.all([
+            Assignment.find(query)
+                .populate('teacherId', 'firstName lastName')
+                .populate('lessonId', 'title')
+                .populate({
+                    path: 'submissions',
+                    match: { studentId },
+                    select: '-password'
+                })
+                .sort({ dueDate: 1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Assignment.countDocuments(query)
+        ]);
+
+        const assignmentsWithSubmission = assignments.map(assignment => {
+            const submissions = assignment.submissions || [];
+            const submission = submissions.length > 0 ? submissions[0] : null;
             const isOverdue = new Date(assignment.dueDate) < new Date() && (!submission || submission.status === 'draft');
             
             return {
-                ...assignment.toJSON(),
+                ...(assignment.toObject ? assignment.toObject() : assignment),
                 submission,
                 isOverdue,
                 daysUntilDue: Math.ceil((new Date(assignment.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
@@ -279,8 +258,8 @@ const getStudentAssignments = async (req, res) => {
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: assignments.count,
-                pages: Math.ceil(assignments.count / limit)
+                total,
+                pages: Math.ceil(total / limit)
             }
         });
     } catch (error) {
@@ -296,21 +275,20 @@ const updateAssignment = async (req, res) => {
         const teacherId = req.user.userId;
 
         const assignment = await Assignment.findOne({
-            where: { id, teacherId }
+            _id: id,
+            teacherId
         });
 
         if (!assignment) {
             return sendResponse(res, 404, 'error', 'Assignment not found or you do not have permission to edit it');
         }
 
-        const updatedAssignment = await assignment.update(req.body);
+        Object.assign(assignment, req.body);
+        await assignment.save();
 
-        const assignmentWithDetails = await Assignment.findByPk(updatedAssignment.id, {
-            include: [
-                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] }
-            ]
-        });
+        const assignmentWithDetails = await Assignment.findById(assignment._id)
+            .populate('teacherId', 'firstName lastName')
+            .populate('lessonId', 'title');
 
         sendResponse(res, 200, 'success', 'Assignment updated successfully', assignmentWithDetails);
     } catch (error) {
@@ -326,14 +304,16 @@ const deleteAssignment = async (req, res) => {
         const teacherId = req.user.userId;
 
         const assignment = await Assignment.findOne({
-            where: { id, teacherId }
+            _id: id,
+            teacherId
         });
 
         if (!assignment) {
             return sendResponse(res, 404, 'error', 'Assignment not found or you do not have permission to delete it');
         }
 
-        await assignment.update({ isActive: false });
+        assignment.isActive = false;
+        await assignment.save();
 
         sendResponse(res, 200, 'success', 'Assignment deleted successfully');
     } catch (error) {
@@ -349,19 +329,16 @@ const getAssignmentById = async (req, res) => {
         const userId = req.user.userId;
         const userRole = req.user.role;
 
-        const assignment = await Assignment.findByPk(id, {
-            include: [
-                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
-                { model: Lesson, as: 'lesson', attributes: ['id', 'title'] },
-                { 
-                    model: Submission, 
-                    as: 'submissions',
-                    include: [
-                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName'] }
-                    ]
+        const assignment = await Assignment.findById(id)
+            .populate('teacherId', 'firstName lastName')
+            .populate('lessonId', 'title')
+            .populate({
+                path: 'submissions',
+                populate: {
+                    path: 'studentId',
+                    select: 'firstName lastName'
                 }
-            ]
-        });
+            });
 
         if (!assignment) {
             return sendResponse(res, 404, 'error', 'Assignment not found');
@@ -379,7 +356,8 @@ const getAssignmentById = async (req, res) => {
                 if (assignment.assignedTo && assignment.assignedTo.length === 0) {
                     // Empty array means "all students" - check if student is assigned to this teacher
                     const teacherStudent = await TeacherStudent.findOne({
-                        where: { studentId: userId, teacherId: assignment.teacherId }
+                        studentId: userId,
+                        teacherId: assignment.teacherId
                     });
                     if (!teacherStudent) {
                         return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
@@ -388,7 +366,7 @@ const getAssignmentById = async (req, res) => {
                     return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
                 }
             }
-        } else if (userRole === 'teacher' && assignment.teacherId !== userId) {
+        } else if (userRole === 'teacher' && assignment.teacherId.toString() !== userId.toString()) {
             return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
         }
 

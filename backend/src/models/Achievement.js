@@ -1,105 +1,70 @@
 /* eslint-disable no-undef */
-const { DataTypes } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize) => {
-    const Achievement = sequelize.define('Achievement', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-        },
-        studentId: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            field: 'student_id',
-            references: {
-                model: 'students',
-                key: 'id'
-            }
-        },
-        title: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            validate: {
-                notEmpty: true,
-                len: [2, 100]
-            }
-        },
-        description: {
-            type: DataTypes.TEXT,
-            allowNull: false
-        },
-        badgeIcon: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            field: 'badge_icon'
-        },
-        badgeColor: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            field: 'badge_color',
-            defaultValue: '#3B82F6'
-        },
-        achievementType: {
-            type: DataTypes.ENUM('completion', 'streak', 'score', 'participation', 'improvement', 'special'),
-            allowNull: false,
-            field: 'achievement_type'
-        },
-        category: {
-            type: DataTypes.STRING,
-            allowNull: true // e.g., 'math', 'reading', 'general'
-        },
-        points: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            defaultValue: 10,
-            validate: {
-                min: 1,
-                max: 1000
-            }
-        },
-        earnedAt: {
-            type: DataTypes.DATE,
-            allowNull: false,
-            field: 'earned_at',
-            defaultValue: DataTypes.NOW
-        },
-        relatedLessonId: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            field: 'related_lesson_id',
-            references: {
-                model: 'lessons',
-                key: 'id'
-            }
-        },
-        relatedAssignmentId: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            field: 'related_assignment_id',
-            references: {
-                model: 'assignments',
-                key: 'id'
-            }
-        }
-    }, {
-        tableName: 'achievements',
-        timestamps: true,
-        indexes: [
-            {
-                fields: ['student_id']
-            },
-            {
-                fields: ['achievement_type']
-            },
-            {
-                fields: ['category']
-            },
-            {
-                fields: ['earned_at']
-            }
-        ]
-    });
+const achievementSchema = new mongoose.Schema({
+    studentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Student',
+    },
+    title: {
+        type: String,
+        required: true,
+        trim: true,
+        minlength: 2,
+        maxlength: 100,
+    },
+    description: {
+        type: String,
+        required: true,
+    },
+    badgeIcon: {
+        type: String,
+        default: null,
+    },
+    badgeColor: {
+        type: String,
+        default: '#3B82F6',
+    },
+    achievementType: {
+        type: String,
+        enum: ['completion', 'streak', 'score', 'participation', 'improvement', 'special'],
+        required: true,
+    },
+    category: {
+        type: String,
+        default: null, // e.g., 'math', 'reading', 'general'
+    },
+    points: {
+        type: Number,
+        required: true,
+        default: 10,
+        min: 1,
+        max: 1000,
+    },
+    earnedAt: {
+        type: Date,
+        required: true,
+        default: Date.now,
+    },
+    relatedLessonId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null,
+        ref: 'Lesson',
+    },
+    relatedAssignmentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null,
+        ref: 'Assignment',
+    }
+}, {
+    timestamps: true,
+    collection: 'achievements'
+});
 
-    return Achievement;
-};
+achievementSchema.index({ studentId: 1 });
+achievementSchema.index({ achievementType: 1 });
+achievementSchema.index({ category: 1 });
+achievementSchema.index({ earnedAt: 1 });
+
+module.exports = mongoose.model('Achievement', achievementSchema);

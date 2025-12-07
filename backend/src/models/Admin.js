@@ -1,55 +1,43 @@
 /* eslint-disable no-undef */
-const { DataTypes } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize) => {
-    const Admin = sequelize.define('Admin', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-        },
-        firstName: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            field: 'first_name',
-        },
-        lastName: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            field: 'last_name',
-        },
-        email: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            unique: true,
-            validate: {
-                isEmail: true,
-            }
-        },
-        password: {
-            type: DataTypes.STRING,
-            allowNull: false,
-        },
-        isSuperAdmin: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false,
-            field: 'is_super_admin'
-        },
-        accountStatus: {
-            type: DataTypes.ENUM('active', 'suspended'),
-            defaultValue: 'active',
-            field: 'account_status'
-        },
-        lastLogin: {
-            type: DataTypes.DATE,
-            allowNull: true,
-            field: 'last_login'
-        }
-    }, {
-        tableName: 'admins',
-        timestamps: true
-    });
+const adminSchema = new mongoose.Schema({
+    firstName: {
+        type: String,
+        required: true,
+    },
+    lastName: {
+        type: String,
+        required: true,
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        trim: true,
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address']
+    },
+    password: {
+        type: String,
+        required: true,
+    },
+    isSuperAdmin: {
+        type: Boolean,
+        default: false,
+    },
+    accountStatus: {
+        type: String,
+        enum: ['active', 'suspended'],
+        default: 'active',
+    },
+    lastLogin: {
+        type: Date,
+        default: null,
+    }
+}, {
+    timestamps: true,
+    collection: 'admins'
+});
 
-    return Admin;
-};
-
+module.exports = mongoose.model('Admin', adminSchema);

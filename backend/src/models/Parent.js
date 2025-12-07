@@ -1,67 +1,53 @@
 /* eslint-disable no-undef */
-const { DataTypes } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize) => {
-    const Parent = sequelize.define('Parent', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-        },
-        firstName: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            field: 'first_name',
-        },
-        lastName: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            field: 'last_name',
-        },
-        email: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            unique: true,
-            validate: {
-                isEmail: true,
-            }
-        },
-        password: {
-            type: DataTypes.STRING,
-            allowNull: false,
-        },
-        phoneNumber: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            field: 'phone_number'
-        },
-        relationship: {
-            type: DataTypes.STRING,
-            allowNull: true
-        },
-        accountStatus: {
-            type: DataTypes.ENUM('active', 'suspended'),
-            defaultValue: 'active',
-            field: 'account_status'
-        },
-        isActive: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true,
-            field: 'is_active'
-        },
-        lastLogin: {
-            type: DataTypes.DATE,
-            allowNull: true,
-            field: 'last_login'
-        }
-    }, {
-        tableName: 'parents',
-        timestamps: true,
-        indexes: [
-            { fields: ['account_status'] }
-        ]
-    });
+const parentSchema = new mongoose.Schema({
+    firstName: {
+        type: String,
+        required: true,
+    },
+    lastName: {
+        type: String,
+        required: true,
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        trim: true,
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address']
+    },
+    password: {
+        type: String,
+        required: true,
+    },
+    phoneNumber: {
+        type: String,
+        default: null,
+    },
+    relationship: {
+        type: String,
+        default: null,
+    },
+    accountStatus: {
+        type: String,
+        enum: ['active', 'suspended'],
+        default: 'active',
+    },
+    isActive: {
+        type: Boolean,
+        default: true,
+    },
+    lastLogin: {
+        type: Date,
+        default: null,
+    }
+}, {
+    timestamps: true,
+    collection: 'parents'
+});
 
-    return Parent;
-};
+parentSchema.index({ accountStatus: 1 });
 
+module.exports = mongoose.model('Parent', parentSchema);

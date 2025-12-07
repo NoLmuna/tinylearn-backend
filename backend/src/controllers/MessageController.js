@@ -1,6 +1,5 @@
 const { Message, Admin, Teacher, Parent, Student } = require('../models');
 const send = require('../utils/response');
-const { Op } = require('sequelize');
 
 const ROLE_MODELS = {
     admin: Admin,
@@ -14,9 +13,7 @@ const ALLOWED_ROLES = Object.keys(ROLE_MODELS);
 const findUserByRole = async (role, id) => {
     const Model = ROLE_MODELS[role];
     if (!Model) return null;
-    return Model.findByPk(id, {
-        attributes: ['id', 'firstName', 'lastName', 'email']
-    });
+    return Model.findById(id).select('firstName lastName email');
 };
 
 const hydrateMessages = async (messages) => {
@@ -38,7 +35,7 @@ const hydrateMessages = async (messages) => {
     };
 
     return Promise.all(messages.map(async (message) => ({
-        ...message.toJSON(),
+        ...(message.toObject ? message.toObject() : message),
         sender: await getActor(message.senderType, message.senderId),
         receiver: await getActor(message.receiverType, message.receiverId)
     })));
@@ -70,7 +67,7 @@ const MessageController = {
 
             let relatedStudent = null;
             if (relatedStudentId) {
-                relatedStudent = await Student.findByPk(relatedStudentId);
+                relatedStudent = await Student.findById(relatedStudentId);
                 if (!relatedStudent) {
                     return send.sendResponseMessage(res, 404, null, 'Related student not found');
                 }
@@ -124,15 +121,12 @@ const MessageController = {
                 return send.sendResponseMessage(res, 400, null, 'Invalid other user role');
             }
 
-            const messages = await Message.findAll({
-                where: {
-                    [Op.or]: [
-                        { senderId: userId, senderType: userRole, receiverId: parsedOtherId, receiverType: otherRole },
-                        { senderId: parsedOtherId, senderType: otherRole, receiverId: userId, receiverType: userRole }
-                    ]
-                },
-                order: [['createdAt', 'ASC']]
-            });
+            const messages = await Message.find({
+                $or: [
+                    { senderId: userId, senderType: userRole, receiverId: parsedOtherId, receiverType: otherRole },
+                    { senderId: parsedOtherId, senderType: otherRole, receiverId: userId, receiverType: userRole }
+                ]
+            }).sort({ createdAt: 1 });
 
             const hydrated = await hydrateMessages(messages);
             return send.sendResponseMessage(res, 200, hydrated, 'Messages retrieved successfully');
@@ -151,15 +145,12 @@ const MessageController = {
                 return send.sendResponseMessage(res, 401, null, 'User identity missing from token');
             }
 
-            const conversations = await Message.findAll({
-                where: {
-                    [Op.or]: [
-                        { senderId: userId, senderType: userRole },
-                        { receiverId: userId, receiverType: userRole }
-                    ]
-                },
-                order: [['createdAt', 'DESC']]
-            });
+            const conversations = await Message.find({
+                $or: [
+                    { senderId: userId, senderType: userRole },
+                    { receiverId: userId, receiverType: userRole }
+                ]
+            }).sort({ createdAt: -1 });
 
             const conversationMap = new Map();
 

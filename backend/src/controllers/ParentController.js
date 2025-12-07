@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Parent } = require('../models/database');
+const { Parent } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -15,7 +15,7 @@ const ParentController = {
                 return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
             }
 
-            const existingParent = await Parent.findOne({ where: { email } });
+            const existingParent = await Parent.findOne({ email });
             if (existingParent) {
                 return send.sendResponseMessage(res, 409, null, 'Parent with this email already exists');
             }
@@ -55,7 +55,7 @@ const ParentController = {
                 return send.sendResponseMessage(res, 400, null, 'Email and password are required');
             }
 
-            const parent = await Parent.findOne({ where: { email } });
+            const parent = await Parent.findOne({ email });
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
             }
@@ -69,7 +69,8 @@ const ParentController = {
                 return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
             }
 
-            await parent.update({ lastLogin: new Date() });
+            parent.lastLogin = new Date();
+            await parent.save();
 
             const token = jwt.sign(
                 {
@@ -98,10 +99,7 @@ const ParentController = {
 
     getParents: async (req, res) => {
         try {
-            const parents = await Parent.findAll({
-                attributes: { exclude: ['password'] },
-                order: [['createdAt', 'DESC']]
-            });
+            const parents = await Parent.find().select('-password').sort({ createdAt: -1 });
 
             return send.sendResponseMessage(res, 200, parents, 'Parents retrieved successfully');
         } catch (error) {
@@ -115,23 +113,22 @@ const ParentController = {
             const { parentId } = req.params;
             const { firstName, lastName, phoneNumber, relationship, accountStatus, isActive } = req.body;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id) !== parseInt(parentId, 10)) {
+            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== parentId.toString()) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            const parent = await Parent.findByPk(parentId);
+            const parent = await Parent.findById(parentId);
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
             }
 
-            await parent.update({
-                firstName: firstName ?? parent.firstName,
-                lastName: lastName ?? parent.lastName,
-                phoneNumber: phoneNumber ?? parent.phoneNumber,
-                relationship: relationship ?? parent.relationship,
-                accountStatus: accountStatus ?? parent.accountStatus,
-                isActive: isActive !== undefined ? isActive : parent.isActive
-            });
+            if (firstName !== undefined) parent.firstName = firstName;
+            if (lastName !== undefined) parent.lastName = lastName;
+            if (phoneNumber !== undefined) parent.phoneNumber = phoneNumber;
+            if (relationship !== undefined) parent.relationship = relationship;
+            if (accountStatus !== undefined) parent.accountStatus = accountStatus;
+            if (isActive !== undefined) parent.isActive = isActive;
+            await parent.save();
 
             return send.sendResponseMessage(res, 200, parent, 'Parent updated successfully');
         } catch (error) {
@@ -144,12 +141,12 @@ const ParentController = {
         try {
             const { parentId } = req.params;
 
-            const parent = await Parent.findByPk(parentId);
+            const parent = await Parent.findById(parentId);
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
             }
 
-            await parent.destroy();
+            await Parent.findByIdAndDelete(parentId);
             return send.sendResponseMessage(res, 200, null, 'Parent deleted successfully');
         } catch (error) {
             console.error('Delete parent error:', error);
@@ -160,9 +157,7 @@ const ParentController = {
     getParentById: async (req, res) => {
         try {
             const { parentId } = req.params;
-            const parent = await Parent.findByPk(parentId, {
-                attributes: { exclude: ['password'] }
-            });
+            const parent = await Parent.findById(parentId).select('-password');
 
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
@@ -177,15 +172,13 @@ const ParentController = {
 
     getProfile: async (req, res) => {
         try {
-            const parent = await Parent.findByPk(req.user.userId, {
-                attributes: { exclude: ['password'] }
-            });
+            const parent = await Parent.findById(req.user.userId).select('-password');
 
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
             }
 
-            const profile = parent.toJSON ? parent.toJSON() : parent;
+            const profile = parent.toObject ? parent.toObject() : parent;
             profile.role = 'parent';
 
             return send.sendResponseMessage(res, 200, profile, 'Parent profile retrieved successfully');

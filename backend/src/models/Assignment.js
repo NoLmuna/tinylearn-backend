@@ -1,111 +1,69 @@
 /* eslint-disable no-undef */
-const { DataTypes } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize) => {
-    const Assignment = sequelize.define('Assignment', {
-        id: {
-            type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
-        },
-        title: {
-            type: DataTypes.STRING,
-            allowNull: false,
-            validate: {
-                notEmpty: true,
-                len: [2, 100]
-            }
-        },
-        description: {
-            type: DataTypes.TEXT,
-            allowNull: false
-        },
-        instructions: {
-            type: DataTypes.TEXT,
-            allowNull: true
-        },
-        lessonId: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            field: 'lesson_id',
-            references: {
-                model: 'lessons',
-                key: 'id'
-            }
-        },
-        teacherId: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            field: 'teacher_id',
-            references: {
-                model: 'teachers',
-                key: 'id'
-            }
-        },
-        assignedTo: {
-            type: DataTypes.TEXT, // JSON array of student IDs
-            allowNull: false,
-            field: 'assigned_to',
-            get() {
-                const rawValue = this.getDataValue('assignedTo');
-                return rawValue ? JSON.parse(rawValue) : [];
-            },
-            set(value) {
-                this.setDataValue('assignedTo', JSON.stringify(value));
-            }
-        },
-        dueDate: {
-            type: DataTypes.DATE,
-            allowNull: false,
-            field: 'due_date'
-        },
-        maxPoints: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            field: 'max_points',
-            defaultValue: 100,
-            validate: {
-                min: 1,
-                max: 1000
-            }
-        },
-        assignmentType: {
-            type: DataTypes.ENUM('homework', 'quiz', 'project', 'reading', 'practice'),
-            allowNull: false,
-            field: 'assignment_type',
-            defaultValue: 'homework'
-        },
-        isActive: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true,
-            field: 'is_active'
-        },
-        attachments: {
-            type: DataTypes.TEXT, // JSON array of file URLs
-            allowNull: true,
-            get() {
-                const rawValue = this.getDataValue('attachments');
-                return rawValue ? JSON.parse(rawValue) : [];
-            },
-            set(value) {
-                this.setDataValue('attachments', JSON.stringify(value));
-            }
-        }
-    }, {
-        tableName: 'assignments',
-        timestamps: true,
-        indexes: [
-            {
-                fields: ['teacher_id']
-            },
-            {
-                fields: ['due_date']
-            },
-            {
-                fields: ['assignment_type']
-            }
-        ]
-    });
+const assignmentSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true,
+        trim: true,
+        minlength: 2,
+        maxlength: 100,
+    },
+    description: {
+        type: String,
+        required: true,
+    },
+    instructions: {
+        type: String,
+        default: null,
+    },
+    lessonId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null,
+        ref: 'Lesson',
+    },
+    teacherId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Teacher',
+    },
+    assignedTo: {
+        type: [mongoose.Schema.Types.ObjectId],
+        required: true,
+        ref: 'Student',
+    },
+    dueDate: {
+        type: Date,
+        required: true,
+    },
+    maxPoints: {
+        type: Number,
+        required: true,
+        default: 100,
+        min: 1,
+        max: 1000,
+    },
+    assignmentType: {
+        type: String,
+        enum: ['homework', 'quiz', 'project', 'reading', 'practice'],
+        required: true,
+        default: 'homework',
+    },
+    isActive: {
+        type: Boolean,
+        default: true,
+    },
+    attachments: {
+        type: [String], // array of file URLs
+        default: [],
+    }
+}, {
+    timestamps: true,
+    collection: 'assignments'
+});
 
-    return Assignment;
-};
+assignmentSchema.index({ teacherId: 1 });
+assignmentSchema.index({ dueDate: 1 });
+assignmentSchema.index({ assignmentType: 1 });
+
+module.exports = mongoose.model('Assignment', assignmentSchema);
