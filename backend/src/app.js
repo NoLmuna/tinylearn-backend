@@ -20,6 +20,30 @@ const UserRoutes = require('./routes/UserRoutes');
 
 const app = express();
 
+// Request timeout middleware - prevent hanging requests
+app.use((req, res, next) => {
+  // Set timeout for all requests (20 seconds)
+  req.setTimeout(20000);
+  res.setTimeout(20000);
+  
+  // Timeout handler
+  const timeoutHandler = () => {
+    if (!res.headersSent) {
+      console.error(`⏱️ Request timeout: ${req.method} ${req.url}`);
+      res.status(504).json({
+        success: false,
+        message: 'Request timeout - server took too long to respond',
+        error: 'Gateway Timeout'
+      });
+    }
+  };
+  
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
+  
+  next();
+});
+
 // Middleware
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
@@ -31,7 +55,8 @@ app.use(cors({
     'http://localhost:5173', 
     'http://localhost:5174',
     'http://localhost:5175',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    'https://tinylearn.vercel.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

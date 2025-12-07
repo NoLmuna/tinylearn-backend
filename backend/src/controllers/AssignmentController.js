@@ -2,6 +2,34 @@
 const { Assignment, Lesson, Submission, Teacher, Student, TeacherStudent } = require('../models');
 const { sendResponse } = require('../utils/response');
 
+/**
+ * Helper function to build order clause for sorting
+ * @param {string} sortBy - Field to sort by
+ * @param {string} sortOrder - ASC or DESC
+ * @returns {Array} Sequelize order clause
+ */
+const buildOrderClause = (sortBy, sortOrder) => {
+    const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const validSortFields = ['createdAt', 'dueDate', 'title', 'assignmentType', 'maxPoints'];
+    
+    if (!validSortFields.includes(sortBy)) {
+        return [['dueDate', 'ASC']];
+    }
+
+    switch (sortBy) {
+        case 'dueDate':
+            return [['dueDate', order]];
+        case 'title':
+            return [['title', order]];
+        case 'assignmentType':
+            return [['assignmentType', order]];
+        case 'maxPoints':
+            return [['maxPoints', order]];
+        default:
+            return [['createdAt', order]];
+    }
+};
+
 // Create a new assignment
 const createAssignment = async (req, res) => {
     try {
@@ -107,15 +135,33 @@ const getAssignments = async (req, res) => {
 const getTeacherAssignments = async (req, res) => {
     try {
         const teacherId = req.user.userId;
-        const { page = 1, limit = 10, status = 'all' } = req.query;
+        const { 
+            page = 1, 
+            limit = 10, 
+            status = 'all',
+            sortBy = 'createdAt',
+            sortOrder = 'DESC',
+            assignmentType,
+            gradeLevel,
+            subject,
+            completionStatus
+        } = req.query;
 
+<<<<<<< HEAD
         const skip = (page - 1) * limit;
         const query = { teacherId };
+=======
+        const offset = (page - 1) * limit;
+        const { Op } = require('sequelize');
+        const whereClause = { teacherId };
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
+        // Filter by status
         if (status !== 'all') {
             query.isActive = status === 'active';
         }
 
+<<<<<<< HEAD
         const [assignments, total] = await Promise.all([
             Assignment.find(query)
                 .populate('lessonId', 'title')
@@ -131,31 +177,131 @@ const getTeacherAssignments = async (req, res) => {
                 .limit(parseInt(limit)),
             Assignment.countDocuments(query)
         ]);
+=======
+        // Filter by assignment type
+        if (assignmentType) {
+            whereClause.assignmentType = assignmentType;
+        }
+
+        // Filter by grade level (if lesson has grade info, or we can add it to assignment)
+        // For now, we'll filter by lesson age group which correlates to grade
+        const includeLesson = {
+            model: Lesson,
+            as: 'lesson',
+            attributes: ['id', 'title', 'ageGroup'],
+            required: false
+        };
+
+        if (gradeLevel) {
+            includeLesson.where = { ageGroup: gradeLevel };
+            includeLesson.required = true;
+        }
+
+        // Filter by subject (category from lesson)
+        if (subject) {
+            if (!includeLesson.where) includeLesson.where = {};
+            includeLesson.where.category = subject;
+            includeLesson.required = true;
+        }
+
+        // Build order clause
+        let orderClause = [];
+        const validSortFields = ['createdAt', 'dueDate', 'title', 'assignmentType', 'maxPoints'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        
+        if (sortBy === 'dueDate') {
+            orderClause = [['dueDate', order]];
+        } else if (sortBy === 'title') {
+            orderClause = [['title', order]];
+        } else {
+            orderClause = [[sortField, order]];
+        }
+
+        const assignments = await Assignment.findAndCountAll({
+            where: whereClause,
+            include: [
+                includeLesson,
+                { 
+                    model: Submission, 
+                    as: 'submissions',
+                    include: [
+                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName', 'grade'] }
+                    ],
+                    required: false
+                }
+            ],
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: orderClause,
+            distinct: true // Important for count with includes
+        });
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
         // Get all students assigned to this teacher for "all students" assignments
         const teacherStudents = await TeacherStudent.find({ teacherId })
             .select('studentId');
         const allStudentIds = teacherStudents.map(ts => ts.studentId);
 
+<<<<<<< HEAD
         const assignmentsWithStats = assignments.map(assignment => {
+=======
+        let assignmentsWithStats = assignments.rows.map(assignment => {
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
             // If assignedTo is empty, it means "all students"
             const totalAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
                 ? assignment.assignedTo.length
                 : allStudentIds.length;
             
+<<<<<<< HEAD
             const submissions = assignment.submissions || [];
             const submissionStats = {
                 total: totalAssigned,
                 submitted: submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
                 graded: submissions.filter(s => s.status === 'graded').length,
                 pending: submissions.filter(s => s.status === 'submitted').length
+=======
+            const submitted = assignment.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length;
+            const graded = assignment.submissions.filter(s => s.status === 'graded').length;
+            const pending = assignment.submissions.filter(s => s.status === 'submitted').length;
+            
+            const submissionStats = {
+                total: totalAssigned,
+                submitted,
+                graded,
+                pending,
+                notSubmitted: totalAssigned - submitted
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
             };
 
+            // Determine completion status
+            let completionStatus = 'not_started';
+            if (graded === totalAssigned && totalAssigned > 0) {
+                completionStatus = 'all_graded';
+            } else if (submitted === totalAssigned && totalAssigned > 0) {
+                completionStatus = 'all_submitted';
+            } else if (submitted > 0) {
+                completionStatus = 'partial';
+            }
+
             return {
+<<<<<<< HEAD
                 ...(assignment.toObject ? assignment.toObject() : assignment),
                 submissionStats
+=======
+                ...assignment.toJSON(),
+                submissionStats,
+                completionStatus
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
             };
         });
+
+        // Filter by completion status if specified
+        if (completionStatus) {
+            assignmentsWithStats = assignmentsWithStats.filter(assignment => 
+                assignment.completionStatus === completionStatus
+            );
+        }
 
         sendResponse(res, 200, 'success', 'Assignments retrieved successfully', {
             assignments: assignmentsWithStats,
@@ -176,18 +322,32 @@ const getTeacherAssignments = async (req, res) => {
 const getStudentAssignments = async (req, res) => {
     try {
         const studentId = req.user.userId;
-        const { page = 1, limit = 10, status = 'all' } = req.query;
+        const { 
+            page = 1, 
+            limit = 10, 
+            status = 'all',
+            sortBy = 'dueDate',
+            sortOrder = 'ASC',
+            assignmentType,
+            subject,
+            completionStatus
+        } = req.query;
 
         const skip = (page - 1) * limit;
         
         // Find assignments where the student is assigned
         // Empty assignedTo array means "all students assigned to teacher"
         
+        console.log('🔍 Fetching assignments for student:', studentId);
+        
         // First, get the teacher IDs this student is assigned to
         const teacherAssignments = await TeacherStudent.find({ studentId })
             .select('teacherId');
         const teacherIds = teacherAssignments.map(ta => ta.teacherId);
+        
+        console.log('👩‍🏫 Student teachers:', teacherIds);
 
+<<<<<<< HEAD
         // Build query: assignment is for this student if:
         // 1. assignedTo contains the studentId, OR
         // 2. assignedTo is empty AND the assignment's teacherId is in the student's teacher list
@@ -224,12 +384,129 @@ const getStudentAssignments = async (req, res) => {
         const assignmentsWithSubmission = assignments.map(assignment => {
             const submissions = assignment.submissions || [];
             const submission = submissions.length > 0 ? submissions[0] : null;
+=======
+        // If student has no teachers, return empty result
+        if (teacherIds.length === 0) {
+            console.log('⚠️ Student has no assigned teachers');
+            return sendResponse(res, 200, 'success', 'No assignments found', {
+                assignments: [],
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: 0,
+                    pages: 0
+                }
+            });
+        }
+
+        console.log('📋 Fetching assignments from teachers...');
+        
+        // Fetch all active assignments from student's teachers
+        const assignments = await Assignment.findAll({
+            where: {
+                teacherId: { [Op.in]: teacherIds },
+                isActive: true
+            },
+            include: [
+                { model: Teacher, as: 'teacher', attributes: ['id', 'firstName', 'lastName'] },
+                { 
+                    model: Lesson, 
+                    as: 'lesson', 
+                    attributes: ['id', 'title', 'category', 'ageGroup'],
+                    required: false,
+                    ...(subject ? { where: { category: subject } } : {})
+                },
+                { 
+                    model: Submission, 
+                    as: 'submissions',
+                    where: { studentId },
+                    required: false
+                }
+            ],
+            order: buildOrderClause(sortBy, sortOrder)
+        });
+        
+        console.log(`✅ Found ${assignments.length} total assignments from teachers`);
+        
+        // Debug: Log raw data for first assignment
+        if (assignments.length > 0) {
+            console.log('🔍 First assignment raw data:', {
+                id: assignments[0].id,
+                assignedTo: assignments[0].assignedTo,
+                assignedToType: typeof assignments[0].assignedTo,
+                dataValues: assignments[0].dataValues.assignedTo,
+                dataValuesType: typeof assignments[0].dataValues.assignedTo
+            });
+        }
+
+        // Filter assignments - include if:
+        // 1. assignedTo array is empty (all students), OR
+        // 2. assignedTo array includes this studentId
+        let filteredByStudent = assignments.filter(assignment => {
+            // Get assignedTo - it might be a string that needs parsing
+            let assignedTo = assignment.assignedTo;
+            
+            // If it's a string, parse it
+            if (typeof assignedTo === 'string') {
+                try {
+                    assignedTo = JSON.parse(assignedTo);
+                } catch (err) {
+                    console.error(`Failed to parse assignedTo for assignment ${assignment.id}:`, assignedTo, err.message);
+                    assignedTo = [];
+                }
+            }
+            
+            // Ensure it's an array
+            if (!Array.isArray(assignedTo)) {
+                assignedTo = [];
+            }
+            
+            console.log(`Assignment ${assignment.id}: assignedTo =`, assignedTo, `(type: ${typeof assignment.assignedTo})`);
+            
+            // Empty array means "all students"
+            if (assignedTo.length === 0) {
+                console.log(`  ✓ Assignment ${assignment.id} is for all students`);
+                return true;
+            }
+            
+            // Check if student is in the assignedTo array
+            const isAssigned = assignedTo.includes(studentId);
+            console.log(`  ${isAssigned ? '✓' : '✗'} Assignment ${assignment.id} student ${studentId} in array:`, isAssigned);
+            return isAssigned;
+        });
+        
+        console.log(`📝 Filtered to ${filteredByStudent.length} assignments for this student`);
+
+        // Filter by assignment type
+        if (assignmentType) {
+            filteredByStudent = filteredByStudent.filter(a => a.assignmentType === assignmentType);
+        }
+
+        // Apply pagination manually
+        const paginatedAssignments = filteredByStudent.slice(offset, offset + parseInt(limit));
+
+        const assignmentsWithSubmission = paginatedAssignments.map(assignment => {
+            const submission = assignment.submissions.length > 0 ? assignment.submissions[0] : null;
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
             const isOverdue = new Date(assignment.dueDate) < new Date() && (!submission || submission.status === 'draft');
+            
+            // Determine completion status
+            let compStatus = 'not_started';
+            if (submission) {
+                if (submission.status === 'graded') {
+                    compStatus = 'graded';
+                } else if (submission.status === 'submitted') {
+                    compStatus = 'submitted';
+                } else {
+                    compStatus = 'draft';
+                }
+            }
             
             return {
                 ...(assignment.toObject ? assignment.toObject() : assignment),
                 submission,
                 isOverdue,
+                completionStatus: compStatus,
                 daysUntilDue: Math.ceil((new Date(assignment.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
             };
         });
@@ -253,17 +530,32 @@ const getStudentAssignments = async (req, res) => {
             });
         }
 
+        // Filter by completion status
+        if (completionStatus) {
+            filteredAssignments = filteredAssignments.filter(assignment => 
+                assignment.completionStatus === completionStatus
+            );
+        }
+        
+        console.log(`🎯 Returning ${filteredAssignments.length} assignments to student`);
+
         sendResponse(res, 200, 'success', 'Assignments retrieved successfully', {
             assignments: filteredAssignments,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
+<<<<<<< HEAD
                 total,
                 pages: Math.ceil(total / limit)
+=======
+                total: filteredByStudent.length,
+                pages: Math.ceil(filteredByStudent.length / limit)
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
             }
         });
     } catch (error) {
-        console.error('Get student assignments error:', error);
+        console.error('❌ Get student assignments error:', error);
+        console.error('Error stack:', error.stack);
         sendResponse(res, 500, 'error', 'Failed to retrieve assignments', null);
     }
 };

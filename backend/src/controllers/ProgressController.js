@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
 const { Progress, Lesson, Student } = require('../models');
 const send = require('../utils/response');
+const ProgressService = require('../services/ProgressService');
 
 const ProgressController = {
     // Get user's progress for all lessons
@@ -139,11 +140,12 @@ const ProgressController = {
         }
     },
 
-    // Get progress statistics for a user
+    // Get progress statistics for a user (enhanced with assignments)
     getProgressStats: async (req, res) => {
         try {
             const studentId = req.user.userId || req.user.id;
 
+<<<<<<< HEAD
             const allProgress = await Progress.find({ studentId });
             const totalLessons = await Lesson.countDocuments({ isActive: true });
             
@@ -164,10 +166,34 @@ const ProgressController = {
                 averageScore: parseFloat(averageScore).toFixed(2),
                 totalTimeSpent: totalTimeSpent
             };
+=======
+            // Use the new ProgressService for comprehensive progress calculation
+            const progressStats = await ProgressService.calculateStudentProgress(studentId);
+>>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
             return send.sendResponseMessage(res, 200, progressStats, 'Progress statistics retrieved successfully');
         } catch (error) {
             console.error('Get progress stats error:', error);
+            return send.sendErrorMessage(res, 500, error);
+        }
+    },
+
+    // Get detailed progress with recent activity
+    getDetailedProgress: async (req, res) => {
+        try {
+            const studentId = req.user.userId || req.user.id;
+            const userRole = req.user.role;
+
+            // Students can only view their own progress
+            if (userRole === 'student' && studentId !== (req.user.userId || req.user.id)) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
+            }
+
+            const detailedProgress = await ProgressService.getDetailedProgress(studentId);
+
+            return send.sendResponseMessage(res, 200, detailedProgress, 'Detailed progress retrieved successfully');
+        } catch (error) {
+            console.error('Get detailed progress error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
     },

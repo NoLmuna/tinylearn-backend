@@ -225,9 +225,9 @@ export default function StudentLogin() {
               </Link>
             </p>
             <p>
-              Need another role?{' '}
+              Teacher or staff?{' '}
               <Link className="text-sky-600 font-semibold" to="/login">
-                Choose role
+                Teacher Login
               </Link>
             </p>
           </div>

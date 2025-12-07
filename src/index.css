@@ -2,16 +2,78 @@
 @import "tailwindcss";
 
 :root {
-  font-family: 'Poppins', system-ui, sans-serif;
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
 }
 
 body {
   margin: 0;
-  font-family: 'Poppins', system-ui, sans-serif;
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: linear-gradient(135deg, #fdf6ff 0%, #e0f7fa 100%);
   min-height: 100vh;
+  color: #1f2937;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Improved typography for better readability */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+p {
+  line-height: 1.7;
+  color: #4b5563;
+}
+
+/* Improved text readability */
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.text-base {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.text-lg {
+  font-size: 1.125rem;
+  line-height: 1.6;
+}
+
+.text-xl {
+  font-size: 1.25rem;
+  line-height: 1.5;
 }
 
 /* Custom utility classes for shadcn-style components */
@@ -69,14 +131,18 @@ a:hover {
   color: #535bf2;
 }
 
+/* Headers and buttons use Fredoka for playful feel, but with improved readability */
 h1, h2, h3, h4, h5, h6, button, .btn, .nav-link {
-  font-family: 'Fredoka', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Fredoka One', 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Ensure buttons have good readability */
+button, .btn {
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
+
 
 button {
   border-radius: 8px;

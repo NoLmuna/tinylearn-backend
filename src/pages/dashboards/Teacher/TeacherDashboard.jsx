@@ -3,6 +3,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import teacherService from '../../../services/teacher';
+import api from '../../../services/api';
 import DashboardNavbar from '../../../components/ui/DashboardNavbar';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
@@ -77,37 +78,70 @@ const TeacherDashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
-    ...STATIC_DASHBOARD_DATA,
-    lessons: []
+    stats: {
+      totalStudents: 0,
+      totalLessons: 0,
+      totalAssignments: 0,
+      pendingReviews: 0,
+      unreadMessages: 0
+    },
+    lessons: [],
+    assignments: [],
+    students: [],
+    messages: [],
+    recentActivity: []
   });
 
   useEffect(() => {
-    fetchLessons();
+    fetchDashboardData();
   }, []);
 
-  const fetchLessons = async () => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await teacherService.getLessons({ silent: true, limit: 6 });
       
-      if (response.success) {
-        const lessonsData = response.data;
-        const lessonsList = Array.isArray(lessonsData.lessons) 
-          ? lessonsData.lessons 
-          : (Array.isArray(lessonsData) ? lessonsData : []);
-        
-        setDashboardData(prev => ({
-          ...prev,
-          lessons: lessonsList,
-          stats: {
-            ...prev.stats,
-            totalLessons: lessonsList.length
-          }
-        }));
-      }
+      // Fetch all data in parallel
+      const [lessonsRes, assignmentsRes, studentsRes] = await Promise.all([
+        teacherService.getLessons({ silent: true, limit: 6 }),
+        api.getAssignments(),
+        teacherService.getAssignedStudents()
+      ]);
+      
+      // Process lessons
+      const lessonsData = lessonsRes.success ? (lessonsRes.data.lessons || lessonsRes.data || []) : [];
+      const lessonsList = Array.isArray(lessonsData) ? lessonsData : [];
+      
+      // Process assignments
+      const assignmentsData = assignmentsRes.success ? (assignmentsRes.data.assignments || assignmentsRes.data || []) : [];
+      const assignmentsList = Array.isArray(assignmentsData) ? assignmentsData : [];
+      
+      // Process students
+      const studentsData = studentsRes.success ? (studentsRes.data || []) : [];
+      const studentsList = Array.isArray(studentsData) ? studentsData : [];
+      
+      // Count pending reviews (ungraded submissions)
+      const pendingReviews = assignmentsList.filter(a => {
+        // Check if assignment has submissions that need grading
+        return a.submissions && a.submissions.some(s => !s.grade && s.status === 'submitted');
+      }).length;
+      
+      setDashboardData({
+        stats: {
+          totalStudents: studentsList.length,
+          totalLessons: lessonsList.length,
+          totalAssignments: assignmentsList.length,
+          pendingReviews: pendingReviews,
+          unreadMessages: 0 // TODO: Connect to messages API when available
+        },
+        lessons: lessonsList.slice(0, 6),
+        assignments: assignmentsList.slice(0, 3),
+        students: studentsList.slice(0, 6),
+        messages: [], // TODO: Fetch from messages API
+        recentActivity: [] // TODO: Fetch from activity API
+      });
     } catch (error) {
-      console.error('Failed to fetch lessons:', error);
-      // Keep static data if fetch fails
+      console.error('Failed to fetch dashboard data:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -132,10 +166,9 @@ const TeacherDashboard = () => {
   const deleteLesson = async (lessonId) => {
     if (window.confirm('Are you sure you want to delete this lesson?')) {
       try {
-        // Note: This will need to be implemented in the API service
-        // For now, just refresh lessons
+        await api.deleteLesson(lessonId);
         toast.success('Lesson deleted successfully');
-        fetchLessons();
+        fetchDashboardData();
       } catch (err) {
         console.error('Failed to delete lesson:', err);
         toast.error('Failed to delete lesson');
@@ -486,8 +519,8 @@ const TeacherDashboard = () => {
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {dashboardData.students.length > 0 ? (
                   dashboardData.students.map((student) => {
-                    // Generate mock progress for display
-                    const progress = Math.floor(Math.random() * 40) + 60; // 60-100%
+                    // Use real progress data if available, otherwise show as 0
+                    const progress = student.progress || 0;
                     return (
                       <div
                         key={student.id}
@@ -502,12 +535,14 @@ const TeacherDashboard = () => {
                             {student.firstName} {student.lastName}
                           </div>
                           <div className="text-sm text-gray-500">
-                            Grade {student.grade || 'N/A'} • {progress}% complete
+                            Grade {student.grade || 'N/A'} {progress > 0 && `• ${progress}% complete`}
                           </div>
                         </div>
-                        <div className={`text-xs px-2 py-1 rounded-full ${getProgressBg(progress)} ${getProgressColor(progress)}`}>
-                          {progress >= 90 ? '⭐' : progress >= 70 ? '👍' : '📈'}
-                        </div>
+                        {progress > 0 && (
+                          <div className={`text-xs px-2 py-1 rounded-full ${getProgressBg(progress)} ${getProgressColor(progress)}`}>
+                            {progress >= 90 ? '⭐' : progress >= 70 ? '👍' : '📈'}
+                          </div>
+                        )}
                       </div>
                     );
                   })

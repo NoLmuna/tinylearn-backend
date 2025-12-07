@@ -15,7 +15,7 @@ router.get('/', authGuard(studentAccess), AssignmentController.getAssignments);
 
 // Role-specific listings
 router.get('/teacher', authGuard(teacherOrAdmin), AssignmentController.getTeacherAssignments);
-router.get('/student', authGuard(studentAccess), AssignmentController.getStudentAssignments);
+router.get('/student', authGuard(['student']), AssignmentController.getStudentAssignments);
 
 // Get specific assignment
 router.get('/:id', authGuard(studentAccess), AssignmentController.getAssignmentById);

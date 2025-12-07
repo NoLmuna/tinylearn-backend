@@ -1,27 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AcademicCapIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { AcademicCapIcon, EyeIcon, EyeSlashIcon, BookOpenIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import toast, { Toaster } from 'react-hot-toast';
 import PlayfulButton from '../../components/PlayfulButton';
 import { useAuth } from '../../hooks/useAuth';
 
-const roleConfig = {
-  student: { 
-    dashboardPath: '/student'
-  },
-  parent: { 
-    dashboardPath: '/parent'
-  },
-  teacher: { 
-    dashboardPath: '/teacher'
-  },
-  admin: { 
-    dashboardPath: '/admin'
-  },
-};
-
 export default function Login() {
-  const { login, logout, user, getRoleDashboardPath } = useAuth();
+  const { login, logout, user } = useAuth();
   const [form, setForm] = useState({ 
     email: '', 
     password: '', 
@@ -35,14 +20,23 @@ export default function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      const dashboardPath = roleConfig[user.role]?.dashboardPath || '/dashboard';
-      navigate(dashboardPath);
+      if (user.role === 'teacher') {
+        navigate('/teacher');
+      } else {
+        // If not a teacher, redirect to their appropriate dashboard
+        const dashboardPaths = {
+          student: '/student',
+          parent: '/parent',
+          admin: '/admin/dashboard'
+        };
+        navigate(dashboardPaths[user.role] || '/');
+      }
     }
   }, [user, navigate]);
 
   useEffect(() => {
     // Check for saved credentials
-    const savedEmail = localStorage.getItem('tinylearn_email');
+    const savedEmail = localStorage.getItem('tinylearn_teacher_email');
     if (savedEmail) {
       setForm(prev => ({ ...prev, email: savedEmail, rememberMe: true }));
     }
@@ -96,28 +90,39 @@ export default function Login() {
       }, false); // Disable AuthContext toast
 
       if (result.success) {
-        // Block admin users from logging in through regular login
-        if (result.user.role === 'admin') {
-          await logout(false); // Logout the admin user immediately (no toast)
-          toast.error('Access denied. Administrators must use the secure admin login.');
+        // Only allow teacher login through this page
+        if (result.user.role !== 'teacher') {
+          await logout(false); // Logout immediately (no toast)
+          
+          const roleMessages = {
+            admin: 'Administrators must use the secure admin login.',
+            student: 'Students should use the student login page.',
+            parent: 'Parents should use the parent login page.'
+          };
+          
+          const redirectPaths = {
+            admin: '/admin/login',
+            student: '/student/login',
+            parent: '/parent/login'
+          };
+          
+          toast.error(roleMessages[result.user.role] || 'Access denied. Please use the correct login page.');
+          
           setTimeout(() => {
-            navigate('/admin/login');
+            navigate(redirectPaths[result.user.role] || '/');
           }, 2000);
           return;
         }
 
         // Save email if remember me is checked
         if (form.rememberMe) {
-          localStorage.setItem('tinylearn_email', form.email);
+          localStorage.setItem('tinylearn_teacher_email', form.email);
         } else {
-          localStorage.removeItem('tinylearn_email');
+          localStorage.removeItem('tinylearn_teacher_email');
         }
 
         toast.success(`Welcome back, ${result.user.firstName}!`);
-        
-        // Navigate to role-specific dashboard
-        const dashboardPath = getRoleDashboardPath(result.user.role);
-        navigate(dashboardPath);
+        navigate('/teacher');
       }
     } catch (error) {
       toast.error(error.message || 'Login failed. Please check your credentials.');
@@ -127,32 +132,35 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-pink-50 via-yellow-50 to-sky-50">
+    <div className="min-h-screen flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-indigo-50 via-blue-50 to-cyan-50">
       <Toaster position="top-center" reverseOrder={false} />
       
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="bg-primary p-3 rounded-full">
-              <AcademicCapIcon className="h-12 w-12 text-white" />
+            <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-4 rounded-2xl shadow-lg">
+              <BookOpenIcon className="h-12 w-12 text-white" />
             </div>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-primary mb-2">
-            Welcome Back!
+          <p className="text-sm uppercase tracking-widest text-indigo-600 font-semibold mb-2">
+            Teacher Portal
+          </p>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">
+            Educator Sign In
           </h2>
-          <p className="text-base sm:text-lg text-gray-700">
-            Sign in to your TinyLearn account
+          <p className="text-base sm:text-lg text-gray-600">
+            Manage lessons, assignments, and student progress
           </p>
         </div>
       </div>
 
       <div className="mt-4 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 sm:px-10 shadow-xl rounded-3xl border border-pink-100 transform transition-all duration-300 hover:scale-[1.01]">
+        <div className="bg-white py-8 px-4 sm:px-10 shadow-2xl rounded-3xl border-2 border-indigo-100 transform transition-all duration-300 hover:scale-[1.01]">
           <form className="space-y-6" onSubmit={handleSubmit}>
             {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-gray-700 mb-2">
-                Email Address
+                Teacher Email
               </label>
               <input
                 id="email"
@@ -162,10 +170,10 @@ export default function Login() {
                 required
                 value={form.email}
                 onChange={handleChange}
-                className={`appearance-none relative block w-full px-4 py-3 border-2 rounded-xl placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 ${
+                className={`appearance-none relative block w-full px-4 py-3 border-2 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 ${
                   errors.email ? 'border-red-300' : 'border-gray-300'
                 }`}
-                placeholder="Enter your email address"
+                placeholder="teacher@tinylearn.com"
               />
               {errors.email && (
                 <p className="mt-1 text-sm text-red-600">{errors.email}</p>
@@ -186,10 +194,10 @@ export default function Login() {
                   required
                   value={form.password}
                   onChange={handleChange}
-                  className={`appearance-none relative block w-full px-4 py-3 pr-12 border-2 rounded-xl placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 ${
+                  className={`appearance-none relative block w-full px-4 py-3 pr-12 border-2 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 ${
                     errors.password ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  placeholder="Enter your password"
+                  placeholder="Enter your secure password"
                 />
                 <button
                   type="button"
@@ -197,9 +205,9 @@ export default function Login() {
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
-                    <EyeSlashIcon className="h-5 w-5 text-gray-400" />
+                    <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   ) : (
-                    <EyeIcon className="h-5 w-5 text-gray-400" />
+                    <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   )}
                 </button>
               </div>
@@ -217,9 +225,9 @@ export default function Login() {
                   type="checkbox"
                   checked={form.rememberMe}
                   onChange={handleChange}
-                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
-                <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
+                <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700 font-medium">
                   Remember me
                 </label>
               </div>
@@ -235,7 +243,7 @@ export default function Login() {
               <PlayfulButton
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 px-4 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
               >
                 {isLoading ? (
                   <div className="flex items-center justify-center">
@@ -243,11 +251,37 @@ export default function Login() {
                     Signing in...
                   </div>
                 ) : (
-                  'Sign In'
+                  <div className="flex items-center justify-center">
+                    <BookOpenIcon className="h-5 w-5 mr-2" />
+                    Sign In to Dashboard
+                  </div>
                 )}
               </PlayfulButton>
             </div>
           </form>
+
+          {/* Other Login Options */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <p className="text-center text-sm text-gray-600 mb-4">
+              Not a teacher?
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Link
+                to="/student/login"
+                className="flex items-center justify-center px-4 py-2 border border-sky-300 rounded-lg text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 transition-colors"
+              >
+                <AcademicCapIcon className="h-4 w-4 mr-1" />
+                Student Login
+              </Link>
+              <Link
+                to="/parent/login"
+                className="flex items-center justify-center px-4 py-2 border border-rose-300 rounded-lg text-sm font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors"
+              >
+                <UserGroupIcon className="h-4 w-4 mr-1" />
+                Parent Login
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

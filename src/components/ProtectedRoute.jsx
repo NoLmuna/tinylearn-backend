@@ -17,8 +17,18 @@ const ProtectedRoute = ({ children, allowedRoles = null }) => {
     );
   }
 
-  // Redirect to login if not authenticated
+  // Redirect to role-specific login if not authenticated
   if (!isAuthenticated) {
+    // Try to determine appropriate login page from URL or default to teacher login
+    const path = window.location.pathname;
+    if (path.startsWith('/student')) {
+      return <Navigate to="/student/login" replace />;
+    } else if (path.startsWith('/parent')) {
+      return <Navigate to="/parent/login" replace />;
+    } else if (path.startsWith('/admin')) {
+      return <Navigate to="/admin/login" replace />;
+    }
+    // Default to teacher login for /teacher routes or unknown routes
     return <Navigate to="/login" replace />;
   }
 

@@ -228,9 +228,9 @@ export default function ParentLogin() {
               </Link>
             </p>
             <p>
-              Looking for another role?{' '}
+              Teacher or staff?{' '}
               <Link className="text-rose-500 font-semibold" to="/login">
-                Back to role selector
+                Teacher Login
               </Link>
             </p>
           </div>
