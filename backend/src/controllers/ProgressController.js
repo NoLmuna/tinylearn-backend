@@ -1,7 +1,6 @@
 /* eslint-disable no-undef */
 const { Progress, Lesson, Student } = require('../models');
 const send = require('../utils/response');
-const ProgressService = require('../services/ProgressService');
 
 const ProgressController = {
     // Get user's progress for all lessons
@@ -145,7 +144,6 @@ const ProgressController = {
         try {
             const studentId = req.user.userId || req.user.id;
 
-<<<<<<< HEAD
             const allProgress = await Progress.find({ studentId });
             const totalLessons = await Lesson.countDocuments({ isActive: true });
             
@@ -166,10 +164,6 @@ const ProgressController = {
                 averageScore: parseFloat(averageScore).toFixed(2),
                 totalTimeSpent: totalTimeSpent
             };
-=======
-            // Use the new ProgressService for comprehensive progress calculation
-            const progressStats = await ProgressService.calculateStudentProgress(studentId);
->>>>>>> cfa5ebfbf9c351e39ae862846bb7e25789b3bccd
 
             return send.sendResponseMessage(res, 200, progressStats, 'Progress statistics retrieved successfully');
         } catch (error) {

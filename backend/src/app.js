@@ -2,9 +2,17 @@
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
+const mongoose = require('mongoose');
 
-// Initialize database connection and models
-require('./models/database');
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_CONN)
+.then(()=> {
+    console.log("Database connected")
+})
+.catch((err) => {
+    console.error(err);
+});
+mongoose.Promise = global.Promise;
 
 // Routes
 const AdminRoutes = require('./routes/AdminRoutes');
@@ -65,6 +73,7 @@ app.use(cors({
 
 // Mount routes
 app.use('/api/admins', AdminRoutes);
+
 app.use('/api/teachers', TeacherRoutes);
 app.use('/api/students', StudentRoutes);
 app.use('/api/parents', ParentRoutes);
@@ -86,13 +95,5 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Import error handling middleware
-const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-
-// 404 handler (must be after all routes)
-app.use(notFoundHandler);
-
-// Global error handler (must be last)
-app.use(errorHandler);
 
 module.exports = app;

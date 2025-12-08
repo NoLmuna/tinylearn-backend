@@ -2,10 +2,6 @@
 const express = require('express');
 const router = express.Router();
 const SubmissionController = require('../controllers/SubmissionController');
-const userGuard = require('../middleware/user-guard');
-
-// Protected routes - all submission routes require authentication
-router.use(userGuard()); // Call userGuard() to get the middleware function
 
 // Create submission (students only)
 router.post('/', SubmissionController.createSubmission);

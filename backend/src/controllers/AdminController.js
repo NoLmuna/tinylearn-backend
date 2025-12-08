@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const { Admin, Teacher, Student, Parent, TeacherStudent } = require('../models');
 const send = require('../utils/response');
 
@@ -226,6 +227,12 @@ const AdminController = {
     getAdminById: async (req, res) => {
         try {
             const { adminId } = req.params;
+            
+            // Validate ObjectId format
+            if (!mongoose.Types.ObjectId.isValid(adminId)) {
+                return send.sendResponseMessage(res, 400, null, 'Invalid admin ID format');
+            }
+            
             const admin = await Admin.findById(adminId).select('-password');
 
             if (!admin) {

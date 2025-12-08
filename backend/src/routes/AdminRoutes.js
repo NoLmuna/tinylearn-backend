@@ -2,26 +2,14 @@
 const express = require('express');
 const router = express.Router();
 const AdminController = require('../controllers/AdminController');
-const authGuard = require('../middleware/user-guard');
 const TeacherController = require('../controllers/TeacherController');
 const StudentController = require('../controllers/StudentController');
 const ParentController = require('../controllers/ParentController');
 
-const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin access required'
-    });
-  }
-  next();
-};
 
 router.post('/register', AdminController.registerAdmin);
 router.post('/login', AdminController.loginAdmin);
 
-router.use(authGuard(['admin', 'teacher', 'student', 'parent']));
-router.use(requireAdmin);
 
 router.get('/profile', AdminController.getProfile);
 router.get('/', AdminController.getAdmins);
