@@ -9,6 +9,7 @@ const ParentController = require('../controllers/ParentController');
 
 router.post('/register', AdminController.registerAdmin);
 router.post('/login', AdminController.loginAdmin);
+router.post('/teachers', AdminController.registerTeacher);
 
 
 router.get('/profile', AdminController.getProfile);
