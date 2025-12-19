@@ -15,7 +15,6 @@ router.get('/parent/teachers', userController.getTeachersForParent);
 router.get('/teacher/parents', userController.getParentsForTeacher);
 
 // Admin-only routes (specific routes BEFORE parameterized routes)
-router.post('/register', userController.registerUser);
 router.get('/stats', userController.getSystemStats);
 router.get('/:userId', userController.getUserById);
 router.put('/:userId', userController.updateUser);

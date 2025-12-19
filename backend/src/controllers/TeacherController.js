@@ -6,185 +6,185 @@ const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
 
-const TeacherController = {
-    registerTeacher: async (req, res) => {
-        try {
-            const { firstName, lastName, email, password, bio, subjectSpecialty } = req.body;
+module.exports.registerTeacher = async (req, res) => {
+    try {
+        const { firstName, lastName, email, password, bio, subjectSpecialty } = req.body;
 
-            if (!firstName || !lastName || !email || !password) {
-                return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
-            }
-
-            const existingTeacher = await Teacher.findOne({ email });
-            if (existingTeacher) {
-                return send.sendResponseMessage(res, 409, null, 'Teacher with this email already exists');
-            }
-
-            const hashedPassword = await argon2.hash(password);
-            const teacher = await Teacher.create({
-                firstName,
-                lastName,
-                email,
-                password: hashedPassword,
-                bio,
-                subjectSpecialty,
-                accountStatus: 'pending'
-            });
-
-            const response = {
-                id: teacher.id,
-                firstName: teacher.firstName,
-                lastName: teacher.lastName,
-                email: teacher.email,
-                accountStatus: teacher.accountStatus
-            };
-
-            return send.sendResponseMessage(res, 201, response, 'Teacher registered successfully. Awaiting admin approval.');
-        } catch (error) {
-            console.error('Register teacher error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        if (!firstName || !lastName || !email || !password) {
+            return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
         }
-    },
 
-    loginTeacher: async (req, res) => {
-        try {
-            const { email, password } = req.body;
-
-            if (!email || !password) {
-                return send.sendResponseMessage(res, 400, null, 'Email and password are required');
-            }
-
-            const teacher = await Teacher.findOne({ email });
-            if (!teacher) {
-                return send.sendResponseMessage(res, 404, null, 'Teacher not found');
-            }
-
-            if (teacher.accountStatus === 'pending') {
-                return send.sendResponseMessage(res, 403, null, 'Account is pending approval');
-            }
-
-            if (teacher.accountStatus === 'suspended') {
-                return send.sendResponseMessage(res, 403, null, 'Account is suspended');
-            }
-
-            const validPassword = await argon2.verify(teacher.password, password);
-            if (!validPassword) {
-                return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
-            }
-
-            teacher.lastLogin = new Date();
-            await teacher.save();
-
-            const token = jwt.sign(
-                {
-                    userId: teacher.id,
-                    role: 'teacher',
-                    email: teacher.email
-                },
-                jwtSecret,
-                { expiresIn: '24h' }
-            );
-
-            const response = {
-                id: teacher.id,
-                firstName: teacher.firstName,
-                lastName: teacher.lastName,
-                email: teacher.email,
-                accountStatus: teacher.accountStatus,
-                subjectSpecialty: teacher.subjectSpecialty,
-                role: 'teacher'
-            };
-
-            return send.sendResponseMessage(res, 200, { user: response, token }, 'Teacher login successful');
-        } catch (error) {
-            console.error('Teacher login error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        const existingTeacher = await Teacher.findOne({ email });
+        if (existingTeacher) {
+            return send.sendResponseMessage(res, 409, null, 'Teacher with this email already exists');
         }
-    },
 
-    getTeachers: async (req, res) => {
-        try {
-            const { status } = req.query;
-            const query = {};
-            if (status) {
-                query.accountStatus = status;
-            }
+        const hashedPassword = await argon2.hash(password);
+        const teacher = await Teacher.create({
+            firstName,
+            lastName,
+            email,
+            password: hashedPassword,
+            bio,
+            subjectSpecialty,
+            accountStatus: 'pending'
+        });
 
-            const teachers = await Teacher.find(query).select('-password').sort({ createdAt: -1 });
+        const response = {
+            id: teacher.id,
+            firstName: teacher.firstName,
+            lastName: teacher.lastName,
+            email: teacher.email,
+            accountStatus: teacher.accountStatus
+        };
 
-            return send.sendResponseMessage(res, 200, teachers, 'Teachers retrieved successfully');
-        } catch (error) {
-            console.error('Get teachers error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        return send.sendResponseMessage(res, 201, response, 'Teacher registered successfully. Awaiting admin approval.');
+    } catch (error) {
+        console.error('Register teacher error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.loginTeacher = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return send.sendResponseMessage(res, 400, null, 'Email and password are required');
         }
-    },
 
-    updateTeacherStatus: async (req, res) => {
-        try {
-            const { teacherId } = req.params;
-            const { accountStatus, isActive } = req.body;
-
-            const teacher = await Teacher.findById(teacherId);
-            if (!teacher) {
-                return send.sendResponseMessage(res, 404, null, 'Teacher not found');
-            }
-
-            if (accountStatus !== undefined) teacher.accountStatus = accountStatus;
-            if (isActive !== undefined) teacher.isActive = isActive;
-            await teacher.save();
-
-            return send.sendResponseMessage(res, 200, teacher, 'Teacher updated successfully');
-        } catch (error) {
-            console.error('Update teacher error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        const teacher = await Teacher.findOne({ email });
+        if (!teacher) {
+            return send.sendResponseMessage(res, 404, null, 'Teacher not found');
         }
-    },
 
-    updateTeacher: async (req, res) => {
-        try {
-            const { teacherId } = req.params;
-            const { firstName, lastName, bio, subjectSpecialty } = req.body;
-
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== teacherId.toString()) {
-                return send.sendResponseMessage(res, 403, null, 'Access denied');
-            }
-
-            const teacher = await Teacher.findById(teacherId);
-            if (!teacher) {
-                return send.sendResponseMessage(res, 404, null, 'Teacher not found');
-            }
-
-            if (firstName !== undefined) teacher.firstName = firstName;
-            if (lastName !== undefined) teacher.lastName = lastName;
-            if (bio !== undefined) teacher.bio = bio;
-            if (subjectSpecialty !== undefined) teacher.subjectSpecialty = subjectSpecialty;
-            await teacher.save();
-
-            return send.sendResponseMessage(res, 200, teacher, 'Teacher profile updated successfully');
-        } catch (error) {
-            console.error('Update teacher profile error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        if (teacher.accountStatus === 'pending') {
+            return send.sendResponseMessage(res, 403, null, 'Account is pending approval');
         }
-    },
 
-    deleteTeacher: async (req, res) => {
-        try {
-            const { teacherId } = req.params;
-
-            const teacher = await Teacher.findById(teacherId);
-            if (!teacher) {
-                return send.sendResponseMessage(res, 404, null, 'Teacher not found');
-            }
-
-            await Teacher.findByIdAndDelete(teacherId);
-            return send.sendResponseMessage(res, 200, null, 'Teacher deleted successfully');
-        } catch (error) {
-            console.error('Delete teacher error:', error);
-            return send.sendErrorMessage(res, 500, error);
+        if (teacher.accountStatus === 'suspended') {
+            return send.sendResponseMessage(res, 403, null, 'Account is suspended');
         }
-    },
 
-    getTeacherById: async (req, res) => {
+        const validPassword = await argon2.verify(teacher.password, password);
+        if (!validPassword) {
+            return send.sendResponseMessage(res, 401, null, 'Invalid credentials');
+        }
+
+        teacher.lastLogin = new Date();
+        await teacher.save();
+
+        const token = jwt.sign(
+            {
+                userId: teacher.id,
+                role: 'teacher',
+                email: teacher.email
+            },
+            jwtSecret,
+            { expiresIn: '24h' }
+        );
+
+        const response = {
+            id: teacher.id,
+            firstName: teacher.firstName,
+            lastName: teacher.lastName,
+            email: teacher.email,
+            accountStatus: teacher.accountStatus,
+            subjectSpecialty: teacher.subjectSpecialty,
+            role: 'teacher'
+        };
+
+        return send.sendResponseMessage(res, 200, { user: response, token }, 'Teacher login successful');
+    } catch (error) {
+        console.error('Teacher login error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.getTeachers = async (req, res) => {
+    try {
+        const { status } = req.query;
+        const query = {};
+        if (status) {
+            query.accountStatus = status;
+        }
+
+        const teachers = await Teacher.find(query).select('-password').sort({ createdAt: -1 });
+
+        return send.sendResponseMessage(res, 200, teachers, 'Teachers retrieved successfully');
+    } catch (error) {
+        console.error('Get teachers error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.updateTeacherStatus = async (req, res) => {
+    try {
+        const { teacherId } = req.params;
+        const { accountStatus, isActive } = req.body;
+
+        const teacher = await Teacher.findById(teacherId);
+        if (!teacher) {
+            return send.sendResponseMessage(res, 404, null, 'Teacher not found');
+        }
+
+        if (accountStatus !== undefined) teacher.accountStatus = accountStatus;
+        if (isActive !== undefined) teacher.isActive = isActive;
+        await teacher.save();
+
+        return send.sendResponseMessage(res, 200, teacher, 'Teacher updated successfully');
+    } catch (error) {
+        console.error('Update teacher error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.updateTeacher = async (req, res) => {
+    try {
+        const { teacherId } = req.params;
+        const { firstName, lastName, bio, password, subjectSpecialty } = req.body;
+
+        if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== teacherId.toString()) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const teacher = await Teacher.findById(teacherId);
+        if (!teacher) {
+            return send.sendResponseMessage(res, 404, null, 'Teacher not found');
+        }
+
+        if (firstName !== undefined) teacher.firstName = firstName;
+        if (lastName !== undefined) teacher.lastName = lastName;
+        if (bio !== undefined) teacher.bio = bio;
+        if (subjectSpecialty !== undefined) teacher.subjectSpecialty = subjectSpecialty;
+        if (password !== undefined) teacher.password = await argon2.hash(password);
+        await teacher.save();
+
+        return send.sendResponseMessage(res, 200, teacher, 'Teacher profile updated successfully');
+    } catch (error) {
+        console.error('Update teacher profile error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.deleteTeacher = async (req, res) => {
+    try {
+        const { teacherId } = req.params;
+
+        const teacher = await Teacher.findById(teacherId);
+        if (!teacher) {
+            return send.sendResponseMessage(res, 404, null, 'Teacher not found');
+        }
+
+        await Teacher.findByIdAndDelete(teacherId);
+        return send.sendResponseMessage(res, 200, null, 'Teacher deleted successfully');
+    } catch (error) {
+        console.error('Delete teacher error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+},
+
+    module.exports.getTeacherById = async (req, res) => {
         try {
             const { teacherId } = req.params;
             const teacher = await Teacher.findById(teacherId).select('-password');
@@ -200,7 +200,7 @@ const TeacherController = {
         }
     },
 
-    getProfile: async (req, res) => {
+    module.exports.getProfile = async (req, res) => {
         try {
             const teacher = await Teacher.findById(req.user.userId).select('-password');
 
@@ -218,7 +218,7 @@ const TeacherController = {
         }
     },
 
-    getAssignedStudents: async (req, res) => {
+    module.exports.getAssignedStudents = async (req, res) => {
         try {
             if (!['teacher', 'admin'].includes(req.user.role)) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
@@ -248,59 +248,56 @@ const TeacherController = {
             console.error('Get assigned students error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
-    },
-
-    getLessons: async (req, res) => {
-        try {
-            if (!['teacher', 'admin'].includes(req.user.role)) {
-                return send.sendResponseMessage(res, 403, null, 'Access denied');
-            }
-
-            const teacherId = req.user.role === 'teacher'
-                ? (req.user.userId || req.user.id)
-                : (req.params.teacherId || req.query.teacherId);
-
-            if (!teacherId) {
-                return send.sendResponseMessage(res, 400, null, 'Teacher id is required');
-            }
-
-            const { page = 1, limit = 10, status } = req.query;
-            const skip = (page - 1) * limit;
-
-            let query = { teacherId };
-            if (status === 'published') {
-                query.isPublished = true;
-            } else if (status === 'draft') {
-                query.isPublished = false;
-            }
-
-            const [lessons, total] = await Promise.all([
-                Lesson.find(query)
-                    .populate('teacherId', 'firstName lastName email')
-                    .populate({
-                        path: 'assignments',
-                        select: '-createdAt -updatedAt'
-                    })
-                    .sort({ createdAt: -1 })
-                    .skip(skip)
-                    .limit(parseInt(limit)),
-                Lesson.countDocuments(query)
-            ]);
-
-            return send.sendResponseMessage(res, 200, {
-                lessons,
-                pagination: {
-                    currentPage: parseInt(page),
-                    totalPages: Math.ceil(total / limit),
-                    totalItems: total,
-                    itemsPerPage: parseInt(limit)
-                }
-            }, 'Teacher lessons retrieved successfully');
-        } catch (error) {
-            console.error('Get teacher lessons error:', error);
-            return send.sendErrorMessage(res, 500, error);
-        }
     }
-};
 
-module.exports = TeacherController;
+module.exports.getLessons = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const teacherId = req.user.role === 'teacher'
+            ? (req.user.userId || req.user.id)
+            : (req.params.teacherId || req.query.teacherId);
+
+        if (!teacherId) {
+            return send.sendResponseMessage(res, 400, null, 'Teacher id is required');
+        }
+
+        const { page = 1, limit = 10, status } = req.query;
+        const skip = (page - 1) * limit;
+
+        let query = { teacherId };
+        if (status === 'published') {
+            query.isPublished = true;
+        } else if (status === 'draft') {
+            query.isPublished = false;
+        }
+
+        const [lessons, total] = await Promise.all([
+            Lesson.find(query)
+                .populate('teacherId', 'firstName lastName email')
+                .populate({
+                    path: 'assignments',
+                    select: '-createdAt -updatedAt'
+                })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Lesson.countDocuments(query)
+        ]);
+
+        return send.sendResponseMessage(res, 200, {
+            lessons,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / limit),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        }, 'Teacher lessons retrieved successfully');
+    } catch (error) {
+        console.error('Get teacher lessons error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}

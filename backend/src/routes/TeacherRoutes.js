@@ -8,10 +8,13 @@ router.post('/login', TeacherController.loginTeacher);
 
 router.get('/profile', TeacherController.getProfile);
 router.get('/', TeacherController.getTeachers);
+router.get('/:teacherId', TeacherController.getTeacherById);
 router.get('/lessons', TeacherController.getLessons);
-router.get('/students',  TeacherController.getAssignedStudents);
+router.get('/students', TeacherController.getAssignedStudents);
+
+router.put('/:teacherId', TeacherController.updateTeacher);
 router.put('/:teacherId/status', TeacherController.updateTeacherStatus);
-router.put('/:teacherId',  TeacherController.updateTeacher);
+
 router.delete('/:teacherId', TeacherController.deleteTeacher);
 
 module.exports = router;
