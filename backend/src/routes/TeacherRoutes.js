@@ -12,6 +12,9 @@ router.get('/:teacherId', TeacherController.getTeacherById);
 router.get('/lessons', TeacherController.getLessons);
 router.get('/students', TeacherController.getAssignedStudents);
 
+router.post('/students', TeacherController.createStudent);
+router.post('/parents', TeacherController.createParent);
+
 router.put('/:teacherId', TeacherController.updateTeacher);
 router.put('/:teacherId/status', TeacherController.updateTeacherStatus);
 

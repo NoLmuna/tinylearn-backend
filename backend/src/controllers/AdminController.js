@@ -71,6 +71,7 @@ module.exports.registerTeacher = async (req, res) => {
             password: hashedPassword,
             bio,
             subjectSpecialty,
+            accountStatus: 'approved',
             // accountStatus will use the model default: 'pending'
         });
 

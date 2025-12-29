@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Teacher, Student, TeacherStudent, Lesson, Assignment } = require('../models');
+const { Teacher, Student, Parent, TeacherStudent, Lesson, Assignment } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -246,6 +246,106 @@ module.exports.deleteTeacher = async (req, res) => {
             return send.sendResponseMessage(res, 200, students, 'Assigned students retrieved successfully');
         } catch (error) {
             console.error('Get assigned students error:', error);
+            return send.sendErrorMessage(res, 500, error);
+        }
+    },
+
+    module.exports.createStudent = async (req, res) => {
+        try {
+            if (!['teacher', 'admin'].includes(req.user.role)) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
+            }
+
+            const { firstName, lastName, email, password, age, grade } = req.body;
+
+            if (!firstName || !lastName || !email || !password) {
+                return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
+            }
+
+            const existingStudent = await Student.findOne({ email });
+            if (existingStudent) {
+                return send.sendResponseMessage(res, 409, null, 'Student with this email already exists');
+            }
+
+            const hashedPassword = await argon2.hash(password);
+            const student = await Student.create({
+                firstName,
+                lastName,
+                email,
+                password: hashedPassword,
+                age,
+                grade,
+                accountStatus: 'active'
+            });
+
+            // Optionally assign student to the teacher
+            const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
+            if (teacherId) {
+                await TeacherStudent.findOneAndUpdate(
+                    { teacherId, studentId: student.id },
+                    { teacherId, studentId: student.id },
+                    { upsert: true, new: true }
+                );
+            }
+
+            const response = {
+                id: student.id,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                email: student.email,
+                grade: student.grade,
+                age: student.age,
+                role: 'student'
+            };
+
+            return send.sendResponseMessage(res, 201, response, 'Student created successfully');
+        } catch (error) {
+            console.error('Create student error:', error);
+            return send.sendErrorMessage(res, 500, error);
+        }
+    },
+
+    module.exports.createParent = async (req, res) => {
+        try {
+            if (!['teacher', 'admin'].includes(req.user.role)) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
+            }
+
+            const { firstName, lastName, email, password, phoneNumber, relationship } = req.body;
+
+            if (!firstName || !lastName || !email || !password) {
+                return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
+            }
+
+            const existingParent = await Parent.findOne({ email });
+            if (existingParent) {
+                return send.sendResponseMessage(res, 409, null, 'Parent with this email already exists');
+            }
+
+            const hashedPassword = await argon2.hash(password);
+            const parent = await Parent.create({
+                firstName,
+                lastName,
+                email,
+                password: hashedPassword,
+                phoneNumber,
+                relationship,
+                accountStatus: 'active'
+            });
+
+            const response = {
+                id: parent.id,
+                firstName: parent.firstName,
+                lastName: parent.lastName,
+                email: parent.email,
+                phoneNumber: parent.phoneNumber,
+                relationship: parent.relationship,
+                role: 'parent'
+            };
+
+            return send.sendResponseMessage(res, 201, response, 'Parent created successfully');
+        } catch (error) {
+            console.error('Create parent error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
     }
