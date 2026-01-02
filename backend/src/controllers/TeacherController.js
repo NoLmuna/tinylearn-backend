@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
-const { Teacher, Student, Parent, TeacherStudent, Lesson, Assignment } = require('../models');
+const { Teacher, Student, Parent, TeacherStudent, StudentParent, Lesson, Assignment } = require('../models');
 const send = require('../utils/response');
 
 const jwtSecret = process.env.JWT_SECRET || process.env.SECRET_KEY || 'your-secret-key';
@@ -182,9 +182,9 @@ module.exports.deleteTeacher = async (req, res) => {
         console.error('Delete teacher error:', error);
         return send.sendErrorMessage(res, 500, error);
     }
-},
+}
 
-    module.exports.getTeacherById = async (req, res) => {
+module.exports.getTeacherById = async (req, res) => {
         try {
             const { teacherId } = req.params;
             const teacher = await Teacher.findById(teacherId).select('-password');
@@ -198,9 +198,9 @@ module.exports.deleteTeacher = async (req, res) => {
             console.error('Get teacher by ID error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
-    },
+}
 
-    module.exports.getProfile = async (req, res) => {
+module.exports.getProfile = async (req, res) => {
         try {
             const teacher = await Teacher.findById(req.user.userId).select('-password');
 
@@ -216,9 +216,9 @@ module.exports.deleteTeacher = async (req, res) => {
             console.error('Get teacher profile error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
-    },
+}
 
-    module.exports.getAssignedStudents = async (req, res) => {
+module.exports.getAssignedStudents = async (req, res) => {
         try {
             if (!['teacher', 'admin'].includes(req.user.role)) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
@@ -243,42 +243,207 @@ module.exports.deleteTeacher = async (req, res) => {
                     role: 'student'
                 }));
 
-            return send.sendResponseMessage(res, 200, students, 'Assigned students retrieved successfully');
+            // Get parent information for each student
+            const studentIds = students.map(s => s._id || s.id);
+            const studentParentRelations = await StudentParent.find({ studentId: { $in: studentIds } })
+                .populate('parentId', '-password')
+                .populate('studentId', 'firstName lastName');
+
+            // Map parents to students
+            const studentsWithParents = students.map(student => {
+                const studentObj = student.toObject ? student.toObject() : student;
+                const parentRelations = studentParentRelations.filter(
+                    rel => (rel.studentId._id || rel.studentId.id).toString() === (studentObj._id || studentObj.id).toString()
+                );
+                const parents = parentRelations.map(rel => ({
+                    ...(rel.parentId.toObject ? rel.parentId.toObject() : rel.parentId),
+                    relationship: rel.relationship,
+                    isPrimary: rel.isPrimary
+                }));
+
+                return {
+                    ...studentObj,
+                    role: 'student',
+                    parents: parents || []
+                };
+            });
+
+            // Filter based on includeArchived query parameter
+            const includeArchived = req.query.includeArchived === 'true';
+            const filteredStudents = includeArchived 
+                ? studentsWithParents 
+                : studentsWithParents.filter(student => student.isActive !== false);
+
+            return send.sendResponseMessage(res, 200, filteredStudents, 'Assigned students retrieved successfully');
         } catch (error) {
             console.error('Get assigned students error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
-    },
+}
 
-    module.exports.createStudent = async (req, res) => {
+module.exports.getAssignedParents = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const teacherId = req.user.role === 'teacher'
+            ? (req.user.userId || req.user.id)
+            : (req.params.teacherId || req.query.teacherId);
+
+        if (!teacherId) {
+            return send.sendResponseMessage(res, 400, null, 'Teacher id is required');
+        }
+
+        // Get all students assigned to this teacher
+        const assignments = await TeacherStudent.find({ teacherId });
+        const studentIds = assignments.map(a => {
+            // Handle both populated and non-populated studentId
+            if (a.studentId && typeof a.studentId === 'object') {
+                return a.studentId._id || a.studentId.id || a.studentId;
+            }
+            return a.studentId;
+        }).filter(Boolean);
+
+        if (studentIds.length === 0) {
+            return send.sendResponseMessage(res, 200, [], 'No parents found for assigned students');
+        }
+
+        // Get all parent-student relationships for these students
+        const studentParentRelations = await StudentParent.find({ studentId: { $in: studentIds } })
+            .populate('parentId', '-password')
+            .populate('studentId', 'firstName lastName email grade');
+
+        // Get unique parents and include their children info
+        const parentMap = new Map();
+        
+        studentParentRelations.forEach(rel => {
+            if (!rel.parentId) return;
+            
+            const parentId = (rel.parentId._id || rel.parentId.id).toString();
+            const parentObj = rel.parentId.toObject ? rel.parentId.toObject() : rel.parentId;
+            
+            if (!parentMap.has(parentId)) {
+                parentMap.set(parentId, {
+                    ...parentObj,
+                    role: 'parent',
+                    children: []
+                });
+            }
+            
+            const parent = parentMap.get(parentId);
+            const studentInfo = {
+                id: rel.studentId._id || rel.studentId.id,
+                firstName: rel.studentId.firstName,
+                lastName: rel.studentId.lastName,
+                email: rel.studentId.email,
+                grade: rel.studentId.grade,
+                relationship: rel.relationship
+            };
+            
+            // Avoid duplicates
+            if (!parent.children.some(c => c.id.toString() === studentInfo.id.toString())) {
+                parent.children.push(studentInfo);
+            }
+        });
+
+        const parents = Array.from(parentMap.values());
+
+        // Filter based on includeArchived query parameter
+        const includeArchived = req.query.includeArchived === 'true';
+        const filteredParents = includeArchived 
+            ? parents 
+            : parents.filter(parent => parent.isActive !== false);
+
+        return send.sendResponseMessage(res, 200, filteredParents, 'Assigned parents retrieved successfully');
+    } catch (error) {
+        console.error('Get assigned parents error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.createStudent = async (req, res) => {
         try {
             if (!['teacher', 'admin'].includes(req.user.role)) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
-            const { firstName, lastName, email, password, age, grade } = req.body;
+            const { 
+                // Student fields
+                studentFirstName, 
+                studentLastName, 
+                studentEmail, 
+                studentPassword, 
+                age, 
+                grade,
+                // Parent fields
+                parentFirstName,
+                parentLastName,
+                parentEmail,
+                parentPassword,
+                phoneNumber,
+                relationship
+            } = req.body;
 
-            if (!firstName || !lastName || !email || !password) {
-                return send.sendResponseMessage(res, 400, null, 'First name, last name, email, and password are required');
+            // Validate student fields
+            if (!studentFirstName || !studentLastName || !studentEmail || !studentPassword) {
+                return send.sendResponseMessage(res, 400, null, 'Student first name, last name, email, and password are required');
             }
 
-            const existingStudent = await Student.findOne({ email });
+            // Validate parent fields
+            if (!parentFirstName || !parentLastName || !parentEmail || !parentPassword) {
+                return send.sendResponseMessage(res, 400, null, 'Parent first name, last name, email, and password are required');
+            }
+
+            // Check for existing student
+            const existingStudent = await Student.findOne({ email: studentEmail });
             if (existingStudent) {
                 return send.sendResponseMessage(res, 409, null, 'Student with this email already exists');
             }
 
-            const hashedPassword = await argon2.hash(password);
+            // Check for existing parent
+            const existingParent = await Parent.findOne({ email: parentEmail });
+            if (existingParent) {
+                return send.sendResponseMessage(res, 409, null, 'Parent with this email already exists');
+            }
+
+            // Create student
+            const hashedStudentPassword = await argon2.hash(studentPassword);
             const student = await Student.create({
-                firstName,
-                lastName,
-                email,
-                password: hashedPassword,
+                firstName: studentFirstName,
+                lastName: studentLastName,
+                email: studentEmail,
+                password: hashedStudentPassword,
                 age,
                 grade,
                 accountStatus: 'active'
             });
 
-            // Optionally assign student to the teacher
+            // Create parent
+            const hashedParentPassword = await argon2.hash(parentPassword);
+            const parent = await Parent.create({
+                firstName: parentFirstName,
+                lastName: parentLastName,
+                email: parentEmail,
+                password: hashedParentPassword,
+                phoneNumber,
+                relationship,
+                accountStatus: 'active'
+            });
+
+            // Link parent to student
+            await StudentParent.findOneAndUpdate(
+                { studentId: student.id, parentId: parent.id },
+                { 
+                    studentId: student.id, 
+                    parentId: parent.id,
+                    relationship: relationship || 'guardian',
+                    isPrimary: true
+                },
+                { upsert: true, new: true }
+            );
+
+            // Assign student to the teacher
             const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
             if (teacherId) {
                 await TeacherStudent.findOneAndUpdate(
@@ -289,23 +454,34 @@ module.exports.deleteTeacher = async (req, res) => {
             }
 
             const response = {
-                id: student.id,
-                firstName: student.firstName,
-                lastName: student.lastName,
-                email: student.email,
-                grade: student.grade,
-                age: student.age,
-                role: 'student'
+                student: {
+                    id: student.id,
+                    firstName: student.firstName,
+                    lastName: student.lastName,
+                    email: student.email,
+                    grade: student.grade,
+                    age: student.age,
+                    role: 'student'
+                },
+                parent: {
+                    id: parent.id,
+                    firstName: parent.firstName,
+                    lastName: parent.lastName,
+                    email: parent.email,
+                    phoneNumber: parent.phoneNumber,
+                    relationship: parent.relationship,
+                    role: 'parent'
+                }
             };
 
-            return send.sendResponseMessage(res, 201, response, 'Student created successfully');
+            return send.sendResponseMessage(res, 201, response, 'Student and parent created successfully');
         } catch (error) {
-            console.error('Create student error:', error);
+            console.error('Create student and parent error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
-    },
+}
 
-    module.exports.createParent = async (req, res) => {
+module.exports.createParent = async (req, res) => {
         try {
             if (!['teacher', 'admin'].includes(req.user.role)) {
                 return send.sendResponseMessage(res, 403, null, 'Access denied');
@@ -348,7 +524,171 @@ module.exports.deleteTeacher = async (req, res) => {
             console.error('Create parent error:', error);
             return send.sendErrorMessage(res, 500, error);
         }
+}
+
+module.exports.archiveStudent = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const { studentId } = req.params;
+
+        // Check if teacher has access to this student
+        const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
+        if (teacherId) {
+            const assignment = await TeacherStudent.findOne({
+                teacherId: teacherId,
+                studentId: studentId
+            });
+            if (!assignment && req.user.role !== 'admin') {
+                return send.sendResponseMessage(res, 403, null, 'Access denied. Student not assigned to you.');
+            }
+        }
+
+        const student = await Student.findById(studentId);
+        if (!student) {
+            return send.sendResponseMessage(res, 404, null, 'Student not found');
+        }
+
+        student.isActive = false;
+        await student.save();
+
+        return send.sendResponseMessage(res, 200, student, 'Student archived successfully');
+    } catch (error) {
+        console.error('Archive student error:', error);
+        return send.sendErrorMessage(res, 500, error);
     }
+}
+
+module.exports.archiveParent = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const { parentId } = req.params;
+
+        // Check if teacher has access to this parent (through assigned students)
+        const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
+        if (teacherId) {
+            const assignments = await TeacherStudent.find({ teacherId });
+            const studentIds = assignments.map(a => {
+                if (a.studentId && typeof a.studentId === 'object') {
+                    return a.studentId._id || a.studentId.id || a.studentId;
+                }
+                return a.studentId;
+            }).filter(Boolean);
+
+            if (studentIds.length > 0) {
+                const parentRelation = await StudentParent.findOne({
+                    parentId: parentId,
+                    studentId: { $in: studentIds }
+                });
+                if (!parentRelation && req.user.role !== 'admin') {
+                    return send.sendResponseMessage(res, 403, null, 'Access denied. Parent not linked to your assigned students.');
+                }
+            } else if (req.user.role !== 'admin') {
+                return send.sendResponseMessage(res, 403, null, 'Access denied.');
+            }
+        }
+
+        const parent = await Parent.findById(parentId);
+        if (!parent) {
+            return send.sendResponseMessage(res, 404, null, 'Parent not found');
+        }
+
+        parent.isActive = false;
+        await parent.save();
+
+        return send.sendResponseMessage(res, 200, parent, 'Parent archived successfully');
+    } catch (error) {
+        console.error('Archive parent error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.restoreStudent = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const { studentId } = req.params;
+
+        // Check if teacher has access to this student
+        const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
+        if (teacherId) {
+            const assignment = await TeacherStudent.findOne({
+                teacherId: teacherId,
+                studentId: studentId
+            });
+            if (!assignment && req.user.role !== 'admin') {
+                return send.sendResponseMessage(res, 403, null, 'Access denied. Student not assigned to you.');
+            }
+        }
+
+        const student = await Student.findById(studentId);
+        if (!student) {
+            return send.sendResponseMessage(res, 404, null, 'Student not found');
+        }
+
+        student.isActive = true;
+        await student.save();
+
+        return send.sendResponseMessage(res, 200, student, 'Student restored successfully');
+    } catch (error) {
+        console.error('Restore student error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
+
+module.exports.restoreParent = async (req, res) => {
+    try {
+        if (!['teacher', 'admin'].includes(req.user.role)) {
+            return send.sendResponseMessage(res, 403, null, 'Access denied');
+        }
+
+        const { parentId } = req.params;
+
+        // Check if teacher has access to this parent (through assigned students)
+        const teacherId = req.user.role === 'teacher' ? (req.user.userId || req.user.id) : null;
+        if (teacherId) {
+            const assignments = await TeacherStudent.find({ teacherId });
+            const studentIds = assignments.map(a => {
+                if (a.studentId && typeof a.studentId === 'object') {
+                    return a.studentId._id || a.studentId.id || a.studentId;
+                }
+                return a.studentId;
+            }).filter(Boolean);
+
+            if (studentIds.length > 0) {
+                const parentRelation = await StudentParent.findOne({
+                    parentId: parentId,
+                    studentId: { $in: studentIds }
+                });
+                if (!parentRelation && req.user.role !== 'admin') {
+                    return send.sendResponseMessage(res, 403, null, 'Access denied. Parent not linked to your assigned students.');
+                }
+            } else if (req.user.role !== 'admin') {
+                return send.sendResponseMessage(res, 403, null, 'Access denied.');
+            }
+        }
+
+        const parent = await Parent.findById(parentId);
+        if (!parent) {
+            return send.sendResponseMessage(res, 404, null, 'Parent not found');
+        }
+
+        parent.isActive = true;
+        await parent.save();
+
+        return send.sendResponseMessage(res, 200, parent, 'Parent restored successfully');
+    } catch (error) {
+        console.error('Restore parent error:', error);
+        return send.sendErrorMessage(res, 500, error);
+    }
+}
 
 module.exports.getLessons = async (req, res) => {
     try {
@@ -364,23 +704,22 @@ module.exports.getLessons = async (req, res) => {
             return send.sendResponseMessage(res, 400, null, 'Teacher id is required');
         }
 
-        const { page = 1, limit = 10, status } = req.query;
+        const { page = 1, limit = 10, status, includeArchived } = req.query;
         const skip = (page - 1) * limit;
 
         let query = { teacherId };
         if (status === 'published') {
-            query.isPublished = true;
+            query.isActive = true;
         } else if (status === 'draft') {
-            query.isPublished = false;
+            query.isActive = false;
+        } else if (includeArchived !== 'true') {
+            // By default, only show active lessons unless includeArchived is true
+            query.isActive = true;
         }
 
         const [lessons, total] = await Promise.all([
             Lesson.find(query)
                 .populate('teacherId', 'firstName lastName email')
-                .populate({
-                    path: 'assignments',
-                    select: '-createdAt -updatedAt'
-                })
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit)),

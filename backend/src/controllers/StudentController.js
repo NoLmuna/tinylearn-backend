@@ -112,14 +112,28 @@ const StudentController = {
         try {
             const { studentId } = req.params;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== studentId.toString()) {
-                return send.sendResponseMessage(res, 403, null, 'Access denied');
-            }
-
             const student = await Student.findById(studentId).select('-password');
 
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
+            }
+
+            // Check permissions: admin, student themselves, or teacher assigned to this student
+            const isAdmin = req.user.role === 'admin';
+            const isSelf = (req.user.userId || req.user.id).toString() === studentId.toString();
+            let isAssignedTeacher = false;
+
+            if (req.user.role === 'teacher') {
+                const { TeacherStudent } = require('../models');
+                const assignment = await TeacherStudent.findOne({
+                    teacherId: req.user.userId || req.user.id,
+                    studentId: studentId
+                });
+                isAssignedTeacher = !!assignment;
+            }
+
+            if (!isAdmin && !isSelf && !isAssignedTeacher) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
             return send.sendResponseMessage(res, 200, student, 'Student retrieved successfully');
@@ -134,13 +148,27 @@ const StudentController = {
             const { studentId } = req.params;
             const { firstName, lastName, grade, age, accountStatus, isActive } = req.body;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== studentId.toString()) {
-                return send.sendResponseMessage(res, 403, null, 'Access denied');
-            }
-
             const student = await Student.findById(studentId);
             if (!student) {
                 return send.sendResponseMessage(res, 404, null, 'Student not found');
+            }
+
+            // Check permissions: admin, student themselves, or teacher assigned to this student
+            const isAdmin = req.user.role === 'admin';
+            const isSelf = (req.user.userId || req.user.id).toString() === studentId.toString();
+            let isAssignedTeacher = false;
+
+            if (req.user.role === 'teacher') {
+                const { TeacherStudent } = require('../models');
+                const assignment = await TeacherStudent.findOne({
+                    teacherId: req.user.userId || req.user.id,
+                    studentId: studentId
+                });
+                isAssignedTeacher = !!assignment;
+            }
+
+            if (!isAdmin && !isSelf && !isAssignedTeacher) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
             if (firstName !== undefined) student.firstName = firstName;

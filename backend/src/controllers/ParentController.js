@@ -113,13 +113,36 @@ const ParentController = {
             const { parentId } = req.params;
             const { firstName, lastName, phoneNumber, relationship, accountStatus, isActive } = req.body;
 
-            if (req.user.role !== 'admin' && (req.user.userId || req.user.id).toString() !== parentId.toString()) {
-                return send.sendResponseMessage(res, 403, null, 'Access denied');
-            }
-
             const parent = await Parent.findById(parentId);
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
+            }
+
+            // Check permissions: admin, parent themselves, or teacher with assigned students linked to this parent
+            const isAdmin = req.user.role === 'admin';
+            const isSelf = (req.user.userId || req.user.id).toString() === parentId.toString();
+            let isAssignedTeacher = false;
+
+            if (req.user.role === 'teacher') {
+                const { TeacherStudent, StudentParent } = require('../models');
+                // Get all students assigned to this teacher
+                const assignments = await TeacherStudent.find({
+                    teacherId: req.user.userId || req.user.id
+                });
+                const studentIds = assignments.map(a => a.studentId).filter(Boolean);
+                
+                // Check if any of these students have this parent
+                if (studentIds.length > 0) {
+                    const parentRelation = await StudentParent.findOne({
+                        parentId: parentId,
+                        studentId: { $in: studentIds }
+                    });
+                    isAssignedTeacher = !!parentRelation;
+                }
+            }
+
+            if (!isAdmin && !isSelf && !isAssignedTeacher) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
             if (firstName !== undefined) parent.firstName = firstName;
@@ -161,6 +184,33 @@ const ParentController = {
 
             if (!parent) {
                 return send.sendResponseMessage(res, 404, null, 'Parent not found');
+            }
+
+            // Check permissions: admin, parent themselves, or teacher with assigned students linked to this parent
+            const isAdmin = req.user.role === 'admin';
+            const isSelf = (req.user.userId || req.user.id).toString() === parentId.toString();
+            let isAssignedTeacher = false;
+
+            if (req.user.role === 'teacher') {
+                const { TeacherStudent, StudentParent } = require('../models');
+                // Get all students assigned to this teacher
+                const assignments = await TeacherStudent.find({
+                    teacherId: req.user.userId || req.user.id
+                });
+                const studentIds = assignments.map(a => a.studentId).filter(Boolean);
+                
+                // Check if any of these students have this parent
+                if (studentIds.length > 0) {
+                    const parentRelation = await StudentParent.findOne({
+                        parentId: parentId,
+                        studentId: { $in: studentIds }
+                    });
+                    isAssignedTeacher = !!parentRelation;
+                }
+            }
+
+            if (!isAdmin && !isSelf && !isAssignedTeacher) {
+                return send.sendResponseMessage(res, 403, null, 'Access denied');
             }
 
             return send.sendResponseMessage(res, 200, parent, 'Parent retrieved successfully');

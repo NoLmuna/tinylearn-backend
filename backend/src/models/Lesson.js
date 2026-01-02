@@ -13,10 +13,21 @@ const lessonSchema = new mongoose.Schema({
         type: String,
         default: null,
     },
-    content: {
-        type: String,
-        default: null,
-    },
+    content: [{
+        chapter: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+        chapterContent: {
+            type: String,
+            default: null,
+        },
+        isSeen: {
+            type: Boolean,
+            default: false,
+        }
+    }],
     category: {
         type: String,
         enum: ['math', 'reading', 'science', 'art', 'music', 'physical', 'social'],
