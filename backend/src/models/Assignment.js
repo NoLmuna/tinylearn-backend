@@ -13,10 +13,6 @@ const assignmentSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    instructions: {
-        type: String,
-        default: null,
-    },
     lessonId: {
         type: mongoose.Schema.Types.ObjectId,
         default: null,

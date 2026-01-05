@@ -26,8 +26,8 @@ const getGradeLetter = (percentage) => {
 // Create a submission
 const createSubmission = async (req, res) => {
     try {
-        const { assignmentId, content, attachments } = req.body;
-        const studentId = req.user.userId;
+        const { assignmentId, content, attachments, status } = req.body;
+        const studentId = req.user.userId || req.user.id;
 
         // Validate that the user is a student
         if (req.user.role !== 'student') {
@@ -43,8 +43,20 @@ const createSubmission = async (req, res) => {
         // Check if student is assigned to this assignment
         const studentIdStr = studentId.toString();
         const assignedToIds = assignment.assignedTo.map(id => id.toString());
+        
+        // If assignedTo is empty, check if student is assigned to the teacher
         if (assignment.assignedTo.length > 0 && !assignedToIds.includes(studentIdStr)) {
             return sendResponse(res, 403, 'error', 'You are not assigned to this assignment');
+        } else if (assignment.assignedTo.length === 0) {
+            // Empty array means "all students" - check if student is assigned to this teacher
+            const TeacherStudent = require('../models/TeacherStudent');
+            const teacherStudent = await TeacherStudent.findOne({
+                studentId: studentId,
+                teacherId: assignment.teacherId
+            });
+            if (!teacherStudent) {
+                return sendResponse(res, 403, 'error', 'You are not assigned to this assignment');
+            }
         }
 
         // Check if submission already exists
@@ -57,13 +69,17 @@ const createSubmission = async (req, res) => {
             return sendResponse(res, 409, 'error', 'Submission already exists. Use update endpoint instead.');
         }
 
+        // Determine submission status - default to 'draft' unless explicitly 'submitted'
+        const submissionStatus = status === 'submitted' ? 'submitted' : 'draft';
+        const submittedAt = submissionStatus === 'submitted' ? new Date() : null;
+
         const submission = await Submission.create({
             assignmentId,
             studentId,
             content,
             attachments: attachments || [],
-            status: 'submitted',
-            submittedAt: new Date()
+            status: submissionStatus,
+            submittedAt: submittedAt
         });
 
         const submissionWithDetails = await Submission.findById(submission._id)
@@ -82,7 +98,7 @@ const updateSubmission = async (req, res) => {
     try {
         const { id } = req.params;
         const { content, attachments } = req.body;
-        const studentId = req.user.userId;
+        const studentId = req.user.userId || req.user.id;
 
         const submission = await Submission.findOne({
             _id: id,
@@ -99,7 +115,13 @@ const updateSubmission = async (req, res) => {
 
         submission.content = content;
         if (attachments !== undefined) submission.attachments = attachments;
-        submission.submittedAt = new Date();
+        
+        // If status is being updated to 'submitted', set submittedAt
+        if (req.body.status === 'submitted' && submission.status !== 'submitted') {
+            submission.status = 'submitted';
+            submission.submittedAt = new Date();
+        }
+        
         await submission.save();
 
         const updatedSubmission = await Submission.findById(submission._id)
@@ -113,78 +135,50 @@ const updateSubmission = async (req, res) => {
     }
 };
 
-// Grade a submission (teacher only) - Simplified and fixed
+// Grade a submission (teacher only)
 const gradeSubmission = async (req, res) => {
-    console.log('\n===========================================');
-    console.log('[GradeSubmission] ⚡ FUNCTION CALLED');
-    console.log('[GradeSubmission] Params:', req.params);
-    console.log('[GradeSubmission] Body:', req.body);
-    console.log('[GradeSubmission] User:', req.user);
-    console.log('===========================================\n');
-    
-    const startTime = Date.now();
-    
     try {
         const { id } = req.params;
         const { score, feedback } = req.body;
-        const graderId = req.user.userId;
-
-        console.log(`[GradeSubmission] 🎯 Processing - submissionId=${id}, score=${score}, graderId=${graderId}`);
+        const graderId = req.user.userId || req.user.id;
 
         // Validate role
         if (req.user.role !== 'teacher') {
-            console.log('[GradeSubmission] ❌ Access denied - not a teacher');
             return sendResponse(res, 403, 'error', 'Only teachers can grade submissions');
         }
 
         // Validate score
         if (score === undefined || score === null) {
-            console.log('[GradeSubmission] ❌ Score is missing');
             return sendResponse(res, 400, 'error', 'Score is required');
         }
 
         const scoreValue = parseFloat(score);
         if (isNaN(scoreValue) || scoreValue < 0) {
-            console.log('[GradeSubmission] ❌ Invalid score value');
             return sendResponse(res, 400, 'error', 'Score must be a valid non-negative number');
         }
 
-        console.log(`[GradeSubmission] 📊 Fetching submission...`);
-        const fetchStart = Date.now();
-        
         // Get submission with assignment
-        const submissionToUpdate = await Submission.findByPk(parseInt(id), {
-            include: [{
-                model: Assignment,
-                as: 'assignment',
-                attributes: ['id', 'maxPoints', 'teacherId']
-            }]
-        });
-        
-        console.log(`[GradeSubmission] ✅ Fetch completed in ${Date.now() - fetchStart}ms`);
+        const submission = await Submission.findById(id)
+            .populate('assignmentId', 'maxPoints teacherId');
 
-        if (!submissionToUpdate) {
-            console.log('[GradeSubmission] ❌ Submission not found');
+        if (!submission) {
             return sendResponse(res, 404, 'error', 'Submission not found');
         }
 
-        const assignment = submissionToUpdate.assignment;
+        const assignment = submission.assignmentId;
         if (!assignment) {
-            console.log('[GradeSubmission] ❌ Assignment not found');
             return sendResponse(res, 404, 'error', 'Assignment not found');
         }
 
-        console.log(`[GradeSubmission] Assignment teacherId=${assignment.teacherId}, requesting graderId=${graderId}`);
-
         // Check teacher permission
-        if (assignment.teacherId !== graderId) {
-            console.log(`[GradeSubmission] ❌ Permission denied`);
+        const assignmentTeacherId = assignment.teacherId.toString();
+        const graderIdStr = graderId.toString();
+        if (assignmentTeacherId !== graderIdStr) {
             return sendResponse(res, 403, 'error', 'You can only grade submissions for your assignments');
         }
 
         // Validate score against max points
         if (scoreValue > assignment.maxPoints) {
-            console.log(`[GradeSubmission] ❌ Score exceeds max`);
             return sendResponse(res, 400, 'error', `Score cannot exceed maximum points (${assignment.maxPoints})`);
         }
 
@@ -195,71 +189,38 @@ const gradeSubmission = async (req, res) => {
         // Prepare feedback - handle empty string as null
         const finalFeedback = (feedback && feedback.trim()) ? feedback.trim().substring(0, 5000) : null;
 
-        console.log(`[GradeSubmission] 💾 Updating with score=${scoreValue}, feedback=${finalFeedback ? 'provided' : 'null'}`);
-        const updateStart = Date.now();
+        // Update submission
+        submission.score = scoreValue;
+        submission.feedback = finalFeedback;
+        submission.status = 'graded';
+        submission.gradedAt = new Date();
+        submission.gradedBy = graderId;
+        await submission.save();
 
-        // Direct SQL update for reliability
-        const [affectedRows] = await Submission.update(
-            {
-                score: scoreValue,
-                feedback: finalFeedback,
-                status: 'graded',
-                gradedAt: new Date(),
-                gradedBy: parseInt(graderId)
-            },
-            {
-                where: { id: parseInt(id) }
-            }
-        );
-        
-        console.log(`[GradeSubmission] ✅ Update completed in ${Date.now() - updateStart}ms, affected ${affectedRows} row(s)`);
+        // Get updated submission with populated data
+        const updatedSubmission = await Submission.findById(id)
+            .populate('assignmentId', 'title dueDate maxPoints')
+            .populate('studentId', 'firstName lastName')
+            .populate('gradedBy', 'firstName lastName');
 
-        // Build response
-        const responseData = {
-            id: parseInt(id),
-            score: scoreValue,
-            feedback: finalFeedback,
-            status: 'graded',
-            gradedAt: new Date().toISOString(),
-            gradedBy: parseInt(graderId),
+        const submissionObj = updatedSubmission.toObject ? updatedSubmission.toObject() : updatedSubmission;
+
+        return sendResponse(res, 200, 'success', 'Submission graded successfully', {
+            ...submissionObj,
             percentage: parseFloat(percentage.toFixed(2)),
-            gradeLetter: gradeLetter,
-            maxPoints: assignment.maxPoints
-        };
-
-        console.log(`[GradeSubmission] 📤 Sending success response`);
-        console.log(`[GradeSubmission] ✅ COMPLETED in ${Date.now() - startTime}ms\n`);
-        
-        return sendResponse(res, 200, 'success', 'Submission graded successfully', responseData);
+            gradeLetter: gradeLetter
+        });
         
     } catch (error) {
-        console.error('[GradeSubmission] 💥 ERROR:', error.message);
-        console.error('[GradeSubmission] Stack:', error.stack);
-        console.error(`[GradeSubmission] Failed after ${Date.now() - startTime}ms\n`);
-        
-        // Prevent double response
-        if (res.headersSent) {
-            console.error('[GradeSubmission] ⚠️  Headers already sent');
-            return;
-        }
-        
-        // Handle specific errors
-        if (error.name === 'SequelizeDatabaseError') {
-            return sendResponse(res, 500, 'error', 'Database error while grading submission');
-        }
-        
-        if (error.name === 'SequelizeValidationError') {
-            return sendResponse(res, 400, 'error', `Validation error: ${error.message}`);
-        }
-        
+        console.error('Grade submission error:', error);
         return sendResponse(res, 500, 'error', `Failed to grade submission: ${error.message}`);
     }
 };
 
-// Get submissions for a teacher - Enhanced with filtering and sorting
+// Get submissions for a teacher
 const getTeacherSubmissions = async (req, res) => {
     try {
-        const teacherId = req.user.userId;
+        const teacherId = req.user.userId || req.user.id;
         const { 
             page = 1, 
             limit = 10, 
@@ -275,14 +236,26 @@ const getTeacherSubmissions = async (req, res) => {
             return sendResponse(res, 403, 'error', 'Only teachers can view submissions');
         }
 
-        const offset = (page - 1) * limit;
-        const { Op } = require('sequelize');
-        const whereClause = {};
+        const skip = (page - 1) * limit;
 
-        // Filter by status
-        if (status !== 'all') {
-            query.status = status;
+        // First, get all assignment IDs for this teacher
+        const assignments = await Assignment.find({ teacherId }).select('_id');
+        const assignmentIds = assignments.map(a => a._id);
+
+        if (assignmentIds.length === 0) {
+            return sendResponse(res, 200, 'success', 'Submissions retrieved successfully', {
+                submissions: [],
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: 0,
+                    pages: 0
+                }
+            });
         }
+
+        // Build query
+        const query = { assignmentId: { $in: assignmentIds } };
 
         // Filter by assignment
         if (assignmentId) {
@@ -291,60 +264,48 @@ const getTeacherSubmissions = async (req, res) => {
 
         // Filter by student
         if (studentId) {
-            whereClause.studentId = studentId;
+            query.studentId = studentId;
+        }
+
+        // Filter by status
+        if (status !== 'all') {
+            query.status = status;
         }
 
         // Filter by graded status
         if (graded === 'graded') {
-            whereClause.status = 'graded';
+            query.status = 'graded';
         } else if (graded === 'ungraded') {
-            whereClause.status = { [Op.in]: ['submitted', 'draft'] };
+            query.status = { $in: ['submitted', 'draft'] };
         }
 
-        // Build order clause
-        let orderClause = [];
-        const validSortFields = ['submittedAt', 'gradedAt', 'score', 'status'];
+        // Build sort
+        const sortOptions = {};
+        const validSortFields = ['submittedAt', 'gradedAt', 'score', 'status', 'createdAt'];
         const sortField = validSortFields.includes(sortBy) ? sortBy : 'submittedAt';
-        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-        orderClause = [[sortField, order]];
+        const order = sortOrder.toUpperCase() === 'ASC' ? 1 : -1;
+        sortOptions[sortField] = order;
 
-        // Get submissions for assignments created by this teacher
-        const submissions = await Submission.findAndCountAll({
-            where: whereClause,
-            include: [
-                { 
-                    model: Assignment, 
-                    as: 'assignment',
-                    where: { teacherId },
-                    attributes: ['id', 'title', 'dueDate', 'maxPoints', 'assignmentType'],
-                    required: true
-                },
-                { 
-                    model: Student, 
-                    as: 'student', 
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'grade']
-                },
-                { 
-                    model: Teacher, 
-                    as: 'grader', 
-                    attributes: ['id', 'firstName', 'lastName'],
-                    required: false
-                }
-            ],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: orderClause,
-            distinct: true
-        });
+        // Fetch submissions
+        const [submissions, total] = await Promise.all([
+            Submission.find(query)
+                .populate('assignmentId', 'title dueDate maxPoints assignmentType')
+                .populate('studentId', 'firstName lastName email grade')
+                .populate('gradedBy', 'firstName lastName')
+                .sort(sortOptions)
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Submission.countDocuments(query)
+        ]);
 
         // Enhance submissions with calculated fields
-        const enhancedSubmissions = submissions.rows.map(submission => {
-            const submissionData = submission.toJSON();
-            if (submissionData.score !== null && submissionData.assignment) {
-                submissionData.percentage = ((submissionData.score / submissionData.assignment.maxPoints) * 100).toFixed(2);
-                submissionData.gradeLetter = getGradeLetter(parseFloat(submissionData.percentage));
+        const enhancedSubmissions = submissions.map(submission => {
+            const submissionObj = submission.toObject ? submission.toObject() : submission;
+            if (submissionObj.score !== null && submissionObj.assignmentId && submissionObj.assignmentId.maxPoints) {
+                submissionObj.percentage = ((submissionObj.score / submissionObj.assignmentId.maxPoints) * 100).toFixed(2);
+                submissionObj.gradeLetter = getGradeLetter(parseFloat(submissionObj.percentage));
             }
-            return submissionData;
+            return submissionObj;
         });
 
         sendResponse(res, 200, 'success', 'Submissions retrieved successfully', {
@@ -352,8 +313,8 @@ const getTeacherSubmissions = async (req, res) => {
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: submissions.count,
-                pages: Math.ceil(submissions.count / limit)
+                total,
+                pages: Math.ceil(total / limit)
             }
         });
     } catch (error) {

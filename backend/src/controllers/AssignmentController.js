@@ -33,12 +33,17 @@ const buildOrderClause = (sortBy, sortOrder) => {
 // Create a new assignment
 const createAssignment = async (req, res) => {
     try {
-        const { title, description, instructions, lessonId, assignedTo, dueDate, maxPoints, assignmentType, attachments } = req.body;
-        const teacherId = req.user.userId;
+        const { title, description, lessonId, assignedTo, dueDate, maxPoints, assignmentType, attachments } = req.body;
+        const teacherId = req.user.userId || req.user.id;
 
         // Validate that the user is a teacher
         if (req.user.role !== 'teacher') {
             return sendResponse(res, 403, 'error', 'Only teachers can create assignments');
+        }
+
+        // Validate required fields
+        if (!title || !description || !dueDate) {
+            return sendResponse(res, 400, 'error', 'Title, description, and due date are required');
         }
 
         // Validate due date
@@ -64,7 +69,6 @@ const createAssignment = async (req, res) => {
         const assignment = await Assignment.create({
             title,
             description,
-            instructions,
             lessonId: lessonId || null, // Allow null for standalone assignments
             teacherId,
             assignedTo: finalAssignedTo, // Empty array means "all students"
@@ -134,7 +138,7 @@ const getAssignments = async (req, res) => {
 // Get assignments for a teacher
 const getTeacherAssignments = async (req, res) => {
     try {
-        const teacherId = req.user.userId;
+        const teacherId = req.user.userId || req.user.id;
         const { 
             page = 1, 
             limit = 10, 
@@ -147,9 +151,10 @@ const getTeacherAssignments = async (req, res) => {
             completionStatus
         } = req.query;
 
-        const offset = (page - 1) * limit;
-        const { Op } = require('sequelize');
-        const whereClause = { teacherId };
+        const skip = (page - 1) * limit;
+        
+        // Build query
+        const query = { teacherId };
 
         // Filter by status
         if (status !== 'all') {
@@ -158,95 +163,83 @@ const getTeacherAssignments = async (req, res) => {
 
         // Filter by assignment type
         if (assignmentType) {
-            whereClause.assignmentType = assignmentType;
+            query.assignmentType = assignmentType;
         }
 
-        // Filter by grade level (if lesson has grade info, or we can add it to assignment)
-        // For now, we'll filter by lesson age group which correlates to grade
-        const includeLesson = {
-            model: Lesson,
-            as: 'lesson',
-            attributes: ['id', 'title', 'ageGroup'],
-            required: false
-        };
-
-        if (gradeLevel) {
-            includeLesson.where = { ageGroup: gradeLevel };
-            includeLesson.required = true;
-        }
-
-        // Filter by subject (category from lesson)
-        if (subject) {
-            if (!includeLesson.where) includeLesson.where = {};
-            includeLesson.where.category = subject;
-            includeLesson.required = true;
-        }
-
-        // Build order clause
-        let orderClause = [];
+        // Build sort
+        const sortOptions = {};
         const validSortFields = ['createdAt', 'dueDate', 'title', 'assignmentType', 'maxPoints'];
         const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-        
-        if (sortBy === 'dueDate') {
-            orderClause = [['dueDate', order]];
-        } else if (sortBy === 'title') {
-            orderClause = [['title', order]];
-        } else {
-            orderClause = [[sortField, order]];
-        }
+        const order = sortOrder.toUpperCase() === 'ASC' ? 1 : -1;
+        sortOptions[sortField] = order;
 
-        const assignments = await Assignment.findAndCountAll({
-            where: whereClause,
-            include: [
-                includeLesson,
-                { 
-                    model: Submission, 
-                    as: 'submissions',
-                    include: [
-                        { model: Student, as: 'student', attributes: ['id', 'firstName', 'lastName', 'grade'] }
-                    ],
-                    required: false
-                }
-            ],
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: orderClause,
-            distinct: true // Important for count with includes
-        });
+        // Fetch assignments with populated lesson
+        const assignments = await Assignment.find(query)
+            .populate('lessonId', 'title ageGroup category')
+            .sort(sortOptions)
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Get total count
+        const total = await Assignment.countDocuments(query);
 
         // Get all students assigned to this teacher for "all students" assignments
         const teacherStudents = await TeacherStudent.find({ teacherId })
             .select('studentId');
-        const allStudentIds = teacherStudents.map(ts => ts.studentId);
+        const allStudentIds = teacherStudents.map(ts => {
+            const studentId = ts.studentId;
+            return studentId._id || studentId.id || studentId;
+        });
 
-        let assignmentsWithStats = assignments.rows.map(assignment => {
+        // Get submissions for these assignments
+        const assignmentIds = assignments.map(a => a._id);
+        const submissions = await Submission.find({ assignmentId: { $in: assignmentIds } })
+            .populate('studentId', 'firstName lastName grade');
+
+        // Group submissions by assignment
+        const submissionsByAssignment = {};
+        submissions.forEach(sub => {
+            const assignmentId = sub.assignmentId.toString();
+            if (!submissionsByAssignment[assignmentId]) {
+                submissionsByAssignment[assignmentId] = [];
+            }
+            submissionsByAssignment[assignmentId].push(sub);
+        });
+
+        // Build assignments with stats
+        let assignmentsWithStats = assignments.map(assignment => {
+            const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+            
             // If assignedTo is empty, it means "all students"
             const totalAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
                 ? assignment.assignedTo.length
                 : allStudentIds.length;
             
-            const submissions = assignment.submissions || [];
+            const assignmentSubmissions = submissionsByAssignment[assignment._id.toString()] || [];
+            const submitted = assignmentSubmissions.filter(s => s.status === 'submitted' || s.status === 'graded').length;
+            const graded = assignmentSubmissions.filter(s => s.status === 'graded').length;
+            
             const submissionStats = {
                 total: totalAssigned,
-                submitted: submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length,
-                graded: submissions.filter(s => s.status === 'graded').length,
-                pending: submissions.filter(s => s.status === 'submitted').length
+                submitted: submitted,
+                graded: graded,
+                pending: assignmentSubmissions.filter(s => s.status === 'submitted').length
             };
 
             // Determine completion status
-            let completionStatus = 'not_started';
+            let compStatus = 'not_started';
             if (graded === totalAssigned && totalAssigned > 0) {
-                completionStatus = 'all_graded';
+                compStatus = 'all_graded';
             } else if (submitted === totalAssigned && totalAssigned > 0) {
-                completionStatus = 'all_submitted';
+                compStatus = 'all_submitted';
             } else if (submitted > 0) {
-                completionStatus = 'partial';
+                compStatus = 'partial';
             }
 
             return {
-                ...(assignment.toObject ? assignment.toObject() : assignment),
-                submissionStats
+                ...assignmentObj,
+                submissionStats,
+                completionStatus: compStatus
             };
         });
 
@@ -275,7 +268,7 @@ const getTeacherAssignments = async (req, res) => {
 // Get assignments for a student
 const getStudentAssignments = async (req, res) => {
     try {
-        const studentId = req.user.userId;
+        const studentId = req.user.userId || req.user.id;
         const { 
             page = 1, 
             limit = 10, 
@@ -297,7 +290,10 @@ const getStudentAssignments = async (req, res) => {
         // First, get the teacher IDs this student is assigned to
         const teacherAssignments = await TeacherStudent.find({ studentId })
             .select('teacherId');
-        const teacherIds = teacherAssignments.map(ta => ta.teacherId);
+        const teacherIds = teacherAssignments.map(ta => {
+            const teacherId = ta.teacherId;
+            return teacherId._id || teacherId.id || teacherId;
+        }).filter(Boolean);
         
         console.log('👩‍🏫 Student teachers:', teacherIds);
 
@@ -323,20 +319,29 @@ const getStudentAssignments = async (req, res) => {
             Assignment.find(query)
                 .populate('teacherId', 'firstName lastName')
                 .populate('lessonId', 'title')
-                .populate({
-                    path: 'submissions',
-                    match: { studentId },
-                    select: '-password'
-                })
                 .sort({ dueDate: 1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
             Assignment.countDocuments(query)
         ]);
 
+        // Get submissions for these assignments
+        const assignmentIds = assignments.map(a => a._id);
+        const submissions = await Submission.find({ 
+            assignmentId: { $in: assignmentIds },
+            studentId: studentId
+        });
+
+        // Create a map of submissions by assignment ID
+        const submissionsByAssignment = {};
+        submissions.forEach(sub => {
+            const assignmentId = sub.assignmentId.toString();
+            submissionsByAssignment[assignmentId] = sub;
+        });
+
         const assignmentsWithSubmission = assignments.map(assignment => {
-            const submissions = assignment.submissions || [];
-            const submission = submissions.length > 0 ? submissions[0] : null;
+            const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+            const submission = submissionsByAssignment[assignment._id.toString()] || null;
             const isOverdue = new Date(assignment.dueDate) < new Date() && (!submission || submission.status === 'draft');
             
             // Determine completion status
@@ -352,7 +357,7 @@ const getStudentAssignments = async (req, res) => {
             }
             
             return {
-                ...(assignment.toObject ? assignment.toObject() : assignment),
+                ...assignmentObj,
                 submission,
                 isOverdue,
                 completionStatus: compStatus,
@@ -462,19 +467,12 @@ const deleteAssignment = async (req, res) => {
 const getAssignmentById = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.userId;
+        const userId = req.user.userId || req.user.id;
         const userRole = req.user.role;
 
         const assignment = await Assignment.findById(id)
             .populate('teacherId', 'firstName lastName')
-            .populate('lessonId', 'title')
-            .populate({
-                path: 'submissions',
-                populate: {
-                    path: 'studentId',
-                    select: 'firstName lastName'
-                }
-            });
+            .populate('lessonId', 'title');
 
         if (!assignment) {
             return sendResponse(res, 404, 'error', 'Assignment not found');
@@ -482,9 +480,12 @@ const getAssignmentById = async (req, res) => {
 
         // Check permissions
         if (userRole === 'student') {
+            const studentIdStr = userId.toString();
+            const assignedToIds = assignment.assignedTo.map(id => id.toString());
+            
             // Check if assignment is assigned to this student
             const isAssigned = assignment.assignedTo && assignment.assignedTo.length > 0
-                ? assignment.assignedTo.includes(userId)
+                ? assignedToIds.includes(studentIdStr)
                 : false;
             
             // If not specifically assigned, check if it's "all students" and student is assigned to teacher
@@ -502,11 +503,40 @@ const getAssignmentById = async (req, res) => {
                     return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
                 }
             }
-        } else if (userRole === 'teacher' && assignment.teacherId.toString() !== userId.toString()) {
-            return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
-        }
 
-        sendResponse(res, 200, 'success', 'Assignment retrieved successfully', assignment);
+            // Fetch student's submission for this assignment
+            const submission = await Submission.findOne({
+                assignmentId: id,
+                studentId: userId
+            });
+
+            const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+            return sendResponse(res, 200, 'success', 'Assignment retrieved successfully', {
+                ...assignmentObj,
+                submission: submission || null
+            });
+        } else if (userRole === 'teacher') {
+            const teacherIdStr = userId.toString();
+            const assignmentTeacherIdStr = assignment.teacherId.toString();
+            
+            if (assignmentTeacherIdStr !== teacherIdStr) {
+                return sendResponse(res, 403, 'error', 'You do not have permission to view this assignment');
+            }
+
+            // For teachers, fetch all submissions for this assignment
+            const submissions = await Submission.find({ assignmentId: id })
+                .populate('studentId', 'firstName lastName');
+
+            const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+            return sendResponse(res, 200, 'success', 'Assignment retrieved successfully', {
+                ...assignmentObj,
+                submissions: submissions || []
+            });
+        } else {
+            // Admin or other roles - return assignment without submissions
+            const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+            return sendResponse(res, 200, 'success', 'Assignment retrieved successfully', assignmentObj);
+        }
     } catch (error) {
         console.error('Get assignment by ID error:', error);
         sendResponse(res, 500, 'error', 'Failed to retrieve assignment', null);
